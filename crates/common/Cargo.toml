@@ -1,0 +1,11 @@
+[package]
+name = "kt_common"
+
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy.workspace = true
+bevy-inspector-egui.workspace = true
+rand.workspace = true
+bevy_prototype_lyon.workspace = true

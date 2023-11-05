@@ -1,0 +1,15 @@
+[package]
+name = "kt_core"
+
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kt_util = { path = '../util' }
+
+bevy.workspace = true
+bevy-inspector-egui.workspace = true
+bevy_tweening.workspace = true
+bevy_rapier2d.workspace = true
+bevy_prototype_lyon.workspace = true
+bevy_prototype_debug_lines.workspace = true

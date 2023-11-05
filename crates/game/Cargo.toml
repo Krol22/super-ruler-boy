@@ -1,0 +1,18 @@
+[package]
+name = "kt_game"
+
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kt_util = { path = '../util' }
+kt_core = { path = '../core' }
+
+bevy.workspace = true
+bevy-inspector-egui.workspace = true
+bevy_tweening.workspace = true
+bevy_rapier2d.workspace = true
+lyon.workspace = true
+rand.workspace = true
+bevy_prototype_lyon.workspace = true
+bevy_prototype_debug_lines.workspace = true
