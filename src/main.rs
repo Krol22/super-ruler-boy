@@ -23,19 +23,13 @@ fn main() {
         .add_plugins(MovementPlugin {})
         .add_systems(Startup, spawn_player)
         .add_systems(Update, (handle_animation, animator_sys, handle_extension_stretch, handle_stretching).chain())
-        .add_systems(Update, (cast_rays, controls, handle_stretching_controls, velocity_y, /* move_body_shape */ sync_x_ceiling_sensor).chain())
-        // .add_systems(Update, (sync_y_diff).chain())
+        .add_systems(Update, (controls, controls_2, velocity_y).chain())
         .run();
 }
 
 
 #[derive(Debug, Component)]
 struct VelocityY(f32);
-
-#[derive(Debug, Component)]
-struct CeilingSensor {
-    has_x_collision: bool,
-}
 
 #[derive(Debug, Component)]
 struct PlayerLimbs {}
@@ -45,163 +39,71 @@ struct GravityDir {
     dir: isize,
 }
 
-fn cast_rays (
-    mut q_player: Query<(&Transform, &mut Player, Entity)>,
+fn controls_2(
+    mut q_player: Query<(&Transform, &mut Player)>,
     rapier_context: Res<RapierContext>,
-) {
-    for (transform, mut player, Entity) in q_player.iter_mut() {
-        let ray_pos = transform.translation.truncate();
-        let ray_dir = Vec2::new(2.0, 0.0);
-        let max_toi = 4.0;
-        let solid = true;
-        let filter = QueryFilter {
-            exclude_collider: Some(Entity),
-            flags: QueryFilterFlags::ONLY_FIXED, 
-            ..default()
-        };
-
-        player.has_x_collision = 0;
-        if let Some((entity, toi)) = rapier_context.cast_ray(
-            ray_pos, ray_dir, max_toi, solid, filter
-        ) {
-            // The first collider hit has the entity `entity` and it hit after
-            // the ray travelled a distance equal to `ray_dir * toi`.
-            let hit_point = ray_pos + ray_dir * toi;
-            println!("Entity {:?} hit at point {}", entity, hit_point);
-            player.has_x_collision = 1;
-            continue;
-        }
-
-        let ray_pos = transform.translation.truncate();
-        let ray_dir = Vec2::new(-2.0, 0.0);
-        let max_toi = 4.0;
-        let solid = true;
-        let filter = QueryFilter {
-            exclude_collider: Some(Entity),
-            flags: QueryFilterFlags::ONLY_FIXED, 
-            ..default()
-        };
-
-        if let Some((entity, toi)) = rapier_context.cast_ray(
-            ray_pos, ray_dir, max_toi, solid, filter
-        ) {
-            // The first collider hit has the entity `entity` and it hit after
-            // the ray travelled a distance equal to `ray_dir * toi`.
-            let hit_point = ray_pos + ray_dir * toi;
-            println!("Entity {:?} hit at point {}", entity, hit_point);
-            player.has_x_collision = -1;
-            continue;
-        }
-    }
-}
-
-fn sync_x_ceiling_sensor (
-    mut q_player: Query<(&KinematicCharacterControllerOutput, &mut Transform, &mut Player), (With<Player>, Without<CeilingSensor>)>,
-    mut q_ceiling_sensor: Query<(&KinematicCharacterControllerOutput, &mut Transform, &mut CeilingSensor), (With<CeilingSensor>, Without<Player>)>,
-) {
-    if q_player.iter().count() == 0 || q_ceiling_sensor.iter().count() == 0 {
-        return;
-    }
-
-    let (kpo, mut player_transform, mut player) = q_player.get_single_mut().unwrap();
-    let (kclo, mut ceiling_sensor_transform, mut ceiling_sensor) = q_ceiling_sensor.get_single_mut().unwrap();
-
-    let mut has_x_collision = false;
-
-    for collision in &kclo.collisions {
-        if collision.translation_remaining.x > 0.001 {
-            has_x_collision = true;
-        }
-    }
-    
-    if has_x_collision {
-        player_transform.translation.x = ceiling_sensor_transform.translation.x;
-    }
-
-    let mut has_x_collision = false;
-
-    for collision in &kpo.collisions {
-        if collision.translation_remaining.x > 0.001 {
-            has_x_collision = true;
-        }
-    }
-
-    if has_x_collision {
-        ceiling_sensor_transform.translation.x = player_transform.translation.x;
-    }
-}
-
-fn handle_stretching_controls(
-    mut q_ceiling_sensor: Query<(&Transform, &mut GravityDir), (With<CeilingSensor>, Without<Player>)>,
-    q_player: Query<&Transform, (With<Player>, Without<CeilingSensor>)>,
-    q_kpo: Query<&KinematicCharacterControllerOutput, (With<Player>, Without<CeilingSensor>)>,
-    q_kcso: Query<&KinematicCharacterControllerOutput, (With<CeilingSensor>, Without<Player>)>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    let player_transform = q_player.get_single().unwrap();
-
-    if q_kpo.iter().count() == 0 {
-        return;
-    }
-
-    if q_kcso.iter().count() != 0 {
-        let kcso = q_kcso.get_single().unwrap();
-        // dbg!(kcso);
-    }
-
-    let kpo = q_kpo.get_single().unwrap();
-
-    for (transform, mut ceiling_sensor) in q_ceiling_sensor.iter_mut() {
-        if kpo.grounded {
-            let mut dir = 1;
-            if player_transform.translation.distance(transform.translation) > 30.0 && keyboard_input.pressed(KeyCode::Space) {
-                dir = 0;
-                ceiling_sensor.dir = dir;
+    for (transform, mut player) in q_player.iter_mut() {
+        if keyboard_input.pressed(KeyCode::Space) {
+            if player.stretch >= 40.0 {
+                player.stretch = 40.0;
                 continue;
-            } 
-
-            if keyboard_input.pressed(KeyCode::Space) {
-                dir = -1;
             }
 
-            ceiling_sensor.dir = dir;
+            let ray_pos = transform.translation.truncate();
+            let ray_dir = Vec2::new(-1.1, player.stretch / 3.0 - 0.3);
+            let max_toi = 4.0;
+            let solid = true;
+            let filter = QueryFilter {
+                flags: QueryFilterFlags::ONLY_FIXED, 
+                ..default()
+            };
+
+            if let Some(_entity) = rapier_context.cast_ray(
+                ray_pos, ray_dir, max_toi, solid, filter
+            ) {
+                continue;
+            }
+
+            let ray_pos = transform.translation.truncate();
+            let ray_dir = Vec2::new(1.1, player.stretch / 3.0 - 0.3);
+            let max_toi = 4.0;
+            let solid = true;
+            let filter = QueryFilter {
+                flags: QueryFilterFlags::ONLY_FIXED, 
+                ..default()
+            };
+
+            if let Some(_entity) = rapier_context.cast_ray(
+                ray_pos, ray_dir, max_toi, solid, filter
+            ) {
+                continue;
+            }
+
+            player.stretch += 1.0;
             continue;
         }
 
-        let is_falling = kpo.effective_translation.y < 0.0;
+        player.stretch -= 1.0;
 
-        if is_falling {
-            if keyboard_input.pressed(KeyCode::Space) && player_transform.translation.distance(transform.translation) < 30.0 {
-                ceiling_sensor.dir = -1;
-                continue;
-            }
-
-            if player_transform.translation.distance(transform.translation) > 30.0 {
-                ceiling_sensor.dir = 2;
-                continue;
-            }
-
-            if player_transform.translation.distance(transform.translation) < 0.5 {
-                ceiling_sensor.dir = 1;
-                continue;
-            }
-        } else {
-            println!("Jumping not implemented yet!");
+        if player.stretch < 0.0 {
+            player.stretch = 0.0;
         }
     }
+
 }
 
 fn handle_stretching(
-    q_player_limbs_container: Query<&Children, (With<PlayerLimbs>, Without<CeilingSensor>)>,    
-    q_ceiling_sensor: Query<&Transform, (With<CeilingSensor>, Without<Limb>)>,
+    q_player_limbs_container: Query<&Children, With<PlayerLimbs>>,    
     mut q_player_limbs: Query<(&mut Transform, &Limb)>,
+    q_player: Query<&Player, Without<PlayerLimbs>>,
 ) {
-    let ceiling_sensor_transform = q_ceiling_sensor.get_single().unwrap();
+    let player = q_player.get_single().unwrap();
 
     for children in q_player_limbs_container.iter() {
         for &child in children.iter() {
             let child = q_player_limbs.get_mut(child);
-
 
             let (mut transform, limb) = match child {
                 Ok(child) => child,
@@ -213,13 +115,14 @@ fn handle_stretching(
                 _ => continue,
             }
 
-            // transform.translation.y = ceiling_sensor_transform.translation.y + 5.0;
+            transform.translation.y = player.stretch;
         }
     }
 }
 
 fn handle_extension_stretch(
-    q_player: Query<(&Children, &Player)>,    
+    q_player_children: Query<(&Children, &PlayerLimbs)>,    
+    q_player: Query<&Player>,    
     mut q_player_limbs: Query<(&mut Sprite, &Limb, &mut Transform)>,
     mut q_player_limbs_2: Query<(&Animator, &Limb)>,
 ) {
@@ -231,7 +134,7 @@ fn handle_extension_stretch(
     extension_frame.insert("Idle".to_string(), vec![0, 0, 0, 0]);
     extension_frame.insert("Move".to_string(), vec![0, 0, 0, 0, 1, 1, 1, 1]);
 
-    for (children, player) in q_player.iter() {
+    for (children, player) in q_player_children.iter() {
         let mut offset = 0;
         let mut frame = 0;
 
@@ -278,6 +181,8 @@ fn handle_extension_stretch(
                 _ => continue,
             }
 
+            let player = q_player.get_single().unwrap();
+
             sprite.rect = Some(Rect::new(frame as f32 * 12.0, 0.0, 12.0 + 12.0 * frame as f32, player.stretch + 4.0));
             transform.translation.y = (player.stretch / 2.0) - 7.0 + offset as f32;
         }
@@ -285,29 +190,51 @@ fn handle_extension_stretch(
 }
 
 fn controls (
-    mut q_player: Query<(&mut KinematicCharacterController, &Player), Without<CeilingSensor>>,
-    mut q_ceiling_sensor: Query<(&mut KinematicCharacterController, &CeilingSensor), Without<Player>>,
+    mut q_player: Query<(&mut KinematicCharacterController, &Player, &Transform)>,
+    rapier_context: Res<RapierContext>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    let (mut impulse, player) = q_player.get_single_mut().unwrap();
-    let (mut kcc, celing_sensor) = q_ceiling_sensor.get_single_mut().unwrap();
+    for (mut kcc, player, transform) in q_player.iter_mut() {
+        let mut translation_x = 0.0;
 
-    let mut translation_x = 0.0;
+        if keyboard_input.pressed(KeyCode::Left) {
+            let ray_pos = transform.translation.truncate() + Vec2::new(0.0, player.stretch + 1.3);
+            let ray_dir = Vec2::new(-1.3, 0.0);
+            let max_toi = 4.0;
+            let solid = true;
+            let filter = QueryFilter {
+                flags: QueryFilterFlags::ONLY_FIXED, 
+                ..default()
+            };
 
-    if keyboard_input.pressed(KeyCode::Left) {
-        translation_x = -1.0;
-    } else if keyboard_input.pressed(KeyCode::Right) {
-        translation_x = 1.0;
+            if let Some(_entity) = rapier_context.cast_ray(
+                ray_pos, ray_dir, max_toi, solid, filter
+            ) {
+                continue;
+            }
+
+            translation_x = -1.0;
+        } else if keyboard_input.pressed(KeyCode::Right) {
+            let ray_pos = transform.translation.truncate() + Vec2::new(0.0, player.stretch + 1.3);
+            let ray_dir = Vec2::new(1.3, 0.0);
+            let max_toi = 4.0;
+            let solid = true;
+            let filter = QueryFilter {
+                flags: QueryFilterFlags::ONLY_FIXED, 
+                ..default()
+            };
+
+            if let Some(_entity) = rapier_context.cast_ray(
+                ray_pos, ray_dir, max_toi, solid, filter
+            ) {
+                continue;
+            }
+
+            translation_x = 1.0;
+        }
+
+        kcc.translation = Some(Vec2::new(translation_x, 0.0));
     }
-
-    impulse.translation = Some(Vec2::new(translation_x, 0.0));
-    if player.has_x_collision < 0 && translation_x < 0.0 {
-        return;
-    } else if player.has_x_collision > 0 && translation_x > 0.0 {
-        return;
-    }
-
-    kcc.translation = Some(Vec2::new(translation_x, 0.0));
 }
 
 fn velocity_y(
@@ -381,14 +308,6 @@ fn handle_animation(
     }
 }
 
-#[repr(u32)]
-pub enum NamedCollisionGroups {
-	Everything = std::u32::MAX,
-	Terrain = 0b0001,
-	Projectile = 0b0010,
-	Npc = 0b0100,
-}
-
 fn spawn_player(
     mut commands: Commands,
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
@@ -409,15 +328,11 @@ fn spawn_player(
     let player = commands.spawn((
         SpatialBundle::from_transform(Transform::from_xyz(0.0, 100.0, 0.0)),
         RigidBody::KinematicVelocityBased,
-        Collider::cuboid(6.0, 11.0),
+        Collider::cuboid(6.0, 9.0),
         GravityDir {
             dir: 1,
         },
-        KinematicCharacterController {
-            filter_groups: Some(CollisionGroups::new(Group::GROUP_2, Group::GROUP_1)),
-            ..default()
-        },
-        CollisionGroups::new(Group::GROUP_2, Group::GROUP_1),
+        KinematicCharacterController::default(),
         Player {
             ..default()
         },
@@ -425,23 +340,8 @@ fn spawn_player(
 
     let player_limbs = commands.spawn((
         PlayerLimbs {},
-        SpatialBundle::from_transform(Transform::from_xyz(320.0, 8.0, 0.0)),
+        SpatialBundle::from_transform(Transform::from_xyz(0.0, 2.0, 0.0)),
     )).id();
-
-    commands.spawn((
-        CeilingSensor { has_x_collision: false },
-        RigidBody::KinematicVelocityBased,
-        Collider::cuboid(6.0, 11.0),
-        GravityDir {
-            dir: 1,
-        },
-        KinematicCharacterController {
-            filter_groups: Some(CollisionGroups::new(Group::GROUP_2, Group::GROUP_1)),
-            ..default()
-        },
-        CollisionGroups::new(Group::GROUP_2, Group::GROUP_1),
-        TransformBundle::from_transform(Transform::from_xyz(0.0, 100.0, 0.0)),
-    ));
 
     // Spawn legs
     let mut legs_animations = HashMap::new();
@@ -606,6 +506,12 @@ fn spawn_player(
         RigidBody::Fixed,
         Collider::cuboid(40.0, 10.0),
         TransformBundle::from_transform(Transform::from_xyz(80.0, -0.0, 0.0)),
+    ));
+
+    commands.spawn((
+        RigidBody::Fixed,
+        Collider::cuboid(40.0, 10.0),
+        TransformBundle::from_transform(Transform::from_xyz(-40.0, 40.0, 0.0)),
     ));
 
     commands.spawn((

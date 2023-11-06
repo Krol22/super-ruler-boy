@@ -1,7 +1,7 @@
 use bevy::prelude::{Plugin, App};
 use bevy_rapier2d::{prelude::{RapierPhysicsPlugin, NoUserData}, render::RapierDebugRenderPlugin};
 
-const PPM: f32 = 10.0;
+const PPM: f32 = 1.0;
 
 #[derive(Debug, Default)]
 pub struct PhysicsPlugin {}
