@@ -27,6 +27,7 @@ fn main() {
     animator_sys,
     handle_extension_stretch,
     handle_stretching,
+    flip_depend_on_velocity,
 ).chain()).run();
 }
 
@@ -128,54 +129,58 @@ fn handle_extension_stretch(
     }
 }
 
-fn handle_animation(
-    q_player: Query<(&Player, &Children)>,    
-    mut q_player_limbs: Query<(&mut Animator, &Limb)>,
-    keyboard_input: Res<Input<KeyCode>>,
+fn flip_depend_on_velocity(
+    mut q_entities: Query<(&mut Transform, &Velocity)>,
 ) {
-    return;
-    for (player, children) in q_player.iter() {
-        // if player.stretch != 0.0 {
-            // for &child in children.iter() {
-                // let child = q_player_limbs.get_mut(child);
-
-                // let (mut animator, limb) = match child {
-                    // Ok(child) => child,
-                    // Err(..) => continue,
-                // };
-
-                // animator.current_animation = "Extending".to_string();
-            // }
-        // } 
-
-        if keyboard_input.pressed(KeyCode::Left) {
-            let animation_name = "Move".to_string();
-
-            for &child in children.iter() {
-                let child = q_player_limbs.get_mut(child);
-
-                let (mut animator, limb) = match child {
-                    Ok(child) => child,
-                    Err(..) => continue,
-                };
-
-                animator.current_animation = animation_name.clone();
-            }
+    for (mut transform, velocity) in q_entities.iter_mut() {
+        if velocity.current.x < -0.1 {
+            // transform.scale.x = -1.0;
         }
 
-        if keyboard_input.pressed(KeyCode::Right) {
-            let animation_name = "Idle".to_string();
+        if velocity.current.x > 0.1 {
+            // transform.scale.x = 1.0;
+        }
+    }
+}
 
-            for &child in children.iter() {
-                let child = q_player_limbs.get_mut(child);
+fn handle_animation(
+    q_player: Query<(&Velocity, &Children), With<Player>>,    
+    mut q_player_limbs: Query<(&Children, &mut Transform), With<PlayerLimbs>>,
+    mut q_limbs: Query<&mut Animator, With<Limb>>,
+) {
+    for (velocity, children) in q_player.iter() {
+        let mut animation_name = "Idle".to_string();
 
-                let (mut animator, limb) = match child {
-                    Ok(child) => child,
+        if velocity.current.x < -0.1  || velocity.current.x > 0.1 {
+            animation_name = "Move".to_string();
+        }
+
+        for &child in children.iter() {
+            let child = q_player_limbs.get_mut(child);
+
+            let (player_limbs, mut transform) = match child {
+                Ok(child) => child,
+                Err(..) => continue,
+            };
+
+            // #TODO - This could be tweened
+            if velocity.current.x < -0.1 {
+                transform.scale.x = -1.0;
+            } else if velocity.current.x > 0.1 {
+                transform.scale.x = 1.0; 
+            }
+
+            for &limb in player_limbs.iter() {
+                let player_limb = q_limbs.get_mut(limb);
+
+                let mut animator = match player_limb {
+                    Ok(player_limb) => player_limb,
                     Err(..) => continue,
                 };
 
                 animator.current_animation = animation_name.clone();
             }
+
         }
     }
 }
