@@ -1,11 +1,11 @@
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Entity}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::Time};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle};
 use bevy::prelude::PluginGroup;
 
-use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, ExternalImpulse, KinematicCharacterControllerOutput, FixedJointBuilder, ImpulseJoint, CollisionGroups, Group, RapierContext, QueryFilter, CharacterLength, QueryFilterFlags}, rapier::prelude::InteractionGroups};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player}};
+use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
 use kt_movement::MovementPlugin;
-use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, self};
+use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT};
 
 fn main() {
     App::new()
@@ -22,115 +22,16 @@ fn main() {
         .add_plugins(CorePlugin {})
         .add_plugins(MovementPlugin {})
         .add_systems(Startup, spawn_player)
-        .add_systems(Update, (controls_when_grabbed_ceiling, controls, controls_2, velocity_y, handle_animation, animator_sys, handle_extension_stretch, handle_stretching, grab_ceiling, ungrab_ceiling).chain())
-        .run();
-}
-
-
-#[derive(Debug, Component, Default)]
-pub struct Velocity {
-    pub current: Vec2,
+        .add_systems(Update, (
+    handle_animation,
+    animator_sys,
+    handle_extension_stretch,
+    handle_stretching,
+).chain()).run();
 }
 
 #[derive(Debug, Component)]
 struct PlayerLimbs {}
-
-#[derive(Debug, Default, Component)]
-struct GravityDir {
-    dir: isize,
-}
-
-fn ungrab_ceiling(
-    mut q_player: Query<&mut Player>,
-    keyboard_input: Res<Input<KeyCode>>,
-) {
-    if keyboard_input.pressed(KeyCode::Z) {
-        for mut player in q_player.iter_mut() {
-            player.grabbed_ceiling = false;
-        }
-    }
-}
-
-fn grab_ceiling(
-    mut q_player: Query<(&mut Player, &mut GravityDir)>,
-) {
-    for (mut player, mut gravity_dir) in q_player.iter_mut() {
-        if player.grabbed_ceiling {
-            gravity_dir.dir = -1;
-            player.stretch -= 1.0;
-        } else {
-            gravity_dir.dir = 1;
-        }
-
-        if player.stretch <= 0.0 {
-            player.stretch = 0.0;
-        }
-    }
-}
-
-
-fn controls_2(
-    mut q_player: Query<(&Transform, &mut Player)>,
-    rapier_context: Res<RapierContext>,
-    keyboard_input: Res<Input<KeyCode>>,
-) {
-    for (transform, mut player) in q_player.iter_mut() {
-        if player.grabbed_ceiling {
-            continue;
-        }
-
-        if keyboard_input.pressed(KeyCode::Space) {
-
-            if player.stretch >= 40.0 {
-                player.stretch = 40.0;
-                continue;
-            }
-
-            let ray_pos = transform.translation.truncate();
-            let ray_dir = Vec2::new(-1.1, player.stretch / 3.0 - 0.3);
-            let max_toi = 4.0;
-            let solid = true;
-            let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED, 
-                ..default()
-            };
-
-            player.grabbed_ceiling = false;
-            if let Some(_entity) = rapier_context.cast_ray(
-                ray_pos, ray_dir, max_toi, solid, filter
-            ) {
-                player.grabbed_ceiling = true;
-                continue;
-            }
-
-            let ray_pos = transform.translation.truncate();
-            let ray_dir = Vec2::new(1.1, player.stretch / 3.0 - 0.3);
-            let max_toi = 4.0;
-            let solid = true;
-            let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED, 
-                ..default()
-            };
-
-            if let Some(_entity) = rapier_context.cast_ray(
-                ray_pos, ray_dir, max_toi, solid, filter
-            ) {
-                player.grabbed_ceiling = true;
-                continue;
-            }
-
-            player.stretch += 1.0;
-            continue;
-        }
-
-        player.stretch -= 1.0;
-
-        if player.stretch < 0.0 {
-            player.stretch = 0.0;
-        }
-    }
-
-}
 
 fn handle_stretching(
     q_player_limbs_container: Query<&Children, With<PlayerLimbs>>,    
@@ -227,125 +128,6 @@ fn handle_extension_stretch(
     }
 }
 
-fn controls_when_grabbed_ceiling(
-    mut q_player: Query<(&mut KinematicCharacterController, &Player, &Transform)>,
-    rapier_context: Res<RapierContext>,
-    keyboard_input: Res<Input<KeyCode>>,
-) {
-    let player = q_player.get_single_mut();
-    let (mut kcc, player, transform) = match player {
-        Ok(player) => player,
-        Err(..) => return,
-    };
-
-    if !player.grabbed_ceiling {
-        return;
-    }
-
-    if keyboard_input.pressed(KeyCode::Left) {
-        let ray_pos = transform.translation.truncate();
-        let ray_dir = Vec2::new(-0.1, 6.0);
-        let max_toi = 4.0;
-        let solid = true;
-        let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED, 
-            ..default()
-        };
-
-        if let Some(_entity) = rapier_context.cast_ray(
-            ray_pos, ray_dir, max_toi, solid, filter
-        ) {
-            kcc.translation = Some(Vec2::new(-0.2, 0.0));
-        }
-
-        return;
-    } 
-
-    if keyboard_input.pressed(KeyCode::Right) {
-        let ray_pos = transform.translation.truncate();
-        let ray_dir = Vec2::new(0.1, 6.0);
-        let max_toi = 4.0;
-        let solid = true;
-        let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED, 
-            ..default()
-        };
-
-        if let Some(_entity) = rapier_context.cast_ray(
-            ray_pos, ray_dir, max_toi, solid, filter
-        ) {
-            kcc.translation = Some(Vec2::new(0.2, 0.0));
-        }
-    }
-}
-
-fn controls (
-    mut q_player: Query<(&mut KinematicCharacterController, &Player, &Transform)>,
-    rapier_context: Res<RapierContext>,
-    keyboard_input: Res<Input<KeyCode>>,
-) {
-    for (mut kcc, player, transform) in q_player.iter_mut() {
-        if player.grabbed_ceiling {
-            continue;
-        }
-
-        let mut translation_x = 0.0;
-
-        if keyboard_input.pressed(KeyCode::Left) {
-            let ray_pos = transform.translation.truncate() + Vec2::new(0.0, player.stretch + 1.3);
-            let ray_dir = Vec2::new(-1.3, 0.0);
-            let max_toi = 4.0;
-            let solid = true;
-            let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED, 
-                ..default()
-            };
-
-            if let Some(_entity) = rapier_context.cast_ray(
-                ray_pos, ray_dir, max_toi, solid, filter
-            ) {
-                continue;
-            }
-
-            translation_x = -1.0;
-        } else if keyboard_input.pressed(KeyCode::Right) {
-            let ray_pos = transform.translation.truncate() + Vec2::new(0.0, player.stretch + 1.3);
-            let ray_dir = Vec2::new(1.3, 0.0);
-            let max_toi = 4.0;
-            let solid = true;
-            let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED, 
-                ..default()
-            };
-
-            if let Some(_entity) = rapier_context.cast_ray(
-                ray_pos, ray_dir, max_toi, solid, filter
-            ) {
-                continue;
-            }
-
-            translation_x = 1.0;
-        }
-
-        kcc.translation = Some(Vec2::new(translation_x, 0.0));
-    }
-}
-
-fn velocity_y(
-    mut player_query: Query<(&mut KinematicCharacterController, &GravityDir)>,
-    time: Res<Time>,
-) {
-    for (mut player, gravity_dir) in player_query.iter_mut() {
-        let mut transform = Vec2::ZERO;
-        transform.y += time.delta_seconds() * -90.0 * gravity_dir.dir as f32;
-
-        match player.translation {
-            Some(t) => player.translation = Some(transform + t),
-            None => player.translation = Some(transform),
-        }
-    }
-}
-
 fn handle_animation(
     q_player: Query<(&Player, &Children)>,    
     mut q_player_limbs: Query<(&mut Animator, &Limb)>,
@@ -423,6 +205,8 @@ fn spawn_player(
             dir: 1,
         },
         Velocity::default(),
+        Acceleration::default(),
+        Jump::default(),
         KinematicCharacterController::default(),
         Player {
             ..default()
@@ -586,19 +370,19 @@ fn spawn_player(
 
     commands.spawn((
         RigidBody::Fixed,
-        Collider::cuboid(40.0, 10.0),
-        TransformBundle::from_transform(Transform::from_xyz(0.0, -25.0, 0.0)),
+        Collider::cuboid(2000.0, 10.0),
+        TransformBundle::from_transform(Transform::from_xyz(-1000.0, -40.0, 0.0)),
     ));
 
     commands.spawn((
         RigidBody::Fixed,
         Collider::cuboid(40.0, 10.0),
-        TransformBundle::from_transform(Transform::from_xyz(-60.0, 40.0, 0.0)),
+        TransformBundle::from_transform(Transform::from_xyz(-60.0, 20.0, 0.0)),
     ));
 
     commands.spawn((
         RigidBody::Fixed,
         Collider::cuboid(40.0, 10.0),
-        TransformBundle::from_transform(Transform::from_xyz(60.0, 40.0, 0.0)),
+        TransformBundle::from_transform(Transform::from_xyz(60.0, 20.0, 0.0)),
     ));
 }
