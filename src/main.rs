@@ -1,7 +1,8 @@
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle};
 use bevy::prelude::PluginGroup;
 
-use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController};
+use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::LdtkIntCellAppExt};
+use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController}};
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
 use kt_movement::MovementPlugin;
@@ -18,10 +19,15 @@ fn main() {
             }),
             ..default()
         }))
+        .add_plugins(LdtkPlugin)
         .add_plugins(CommonPlugin {})
         .add_plugins(CorePlugin {})
         .add_plugins(MovementPlugin {})
+        .add_systems(Startup, setup)
         .add_systems(Startup, spawn_player)
+        .insert_resource(LevelSelection::Index(0))
+        .register_ldtk_int_cell::<WallBundle>(1)
+        .add_systems(Update, setup_walls)
         .add_systems(Update, (
     handle_animation,
     animator_sys,
@@ -29,6 +35,193 @@ fn main() {
     handle_stretching,
     flip_depend_on_velocity,
 ).chain()).run();
+}
+
+fn setup_walls(
+    mut commands: Commands,
+    q_walls: Query<(&Transform, Entity), With<WallDefinition>>,
+) {
+    let mut points: Vec<Point> = vec![];
+
+    for (transform, entity) in q_walls.iter() {
+        commands
+            .entity(entity)
+            .remove::<RigidBody>()
+            .remove::<Collider>()
+            .remove::<WallDefinition>();
+
+        points.push(
+            Point {
+                x: (transform.translation.x) as i32,
+                y: (transform.translation.y) as i32,
+            }
+        );
+    }
+
+    if points.is_empty() {
+        return;
+    }
+
+    let shapes = merge_tiles_into_shapes(points, 8);
+
+    for shape in shapes.iter() {
+        commands.spawn((
+            SpatialBundle::from_transform(Transform::from_xyz(
+                shape.top_left.x as f32 + shape.width as f32 / 2.0,
+                shape.top_left.y as f32 + shape.height as f32 / 2.0, 0.0
+            )),
+            RigidBody::Fixed,
+            Collider::cuboid(shape.width as f32 / 2.0, shape.height as f32 / 2.0),
+        ));
+    }
+}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct WallDefinition {}
+
+#[derive(Clone, Debug, Default, Bundle, LdtkIntCell)]
+pub struct WallBundle {
+    #[from_int_grid_cell]
+    pub collider_bundle: ColliderBundle,
+    pub wall: WallDefinition,
+}
+
+#[derive(Clone, Debug, Default, Bundle, LdtkIntCell)]
+pub struct ColliderBundle {
+    pub collider: Collider,
+    pub rigid_body: RigidBody,
+}
+
+impl From<IntGridCell> for ColliderBundle {
+    fn from(int_grid_cell: IntGridCell) -> ColliderBundle {
+        if int_grid_cell.value == 1 {
+            ColliderBundle {
+                collider: Collider::cuboid(4., 4.),
+                rigid_body: RigidBody::Fixed,
+            }
+        } else {
+            ColliderBundle::default()
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn are_adjacent(p1: Point, p2: Point) -> bool {
+    // Assuming a grid size of 1 unit between adjacent points
+    (p1.x == p2.x && (p1.y - p2.y).abs() == 1) ||
+    (p1.y == p2.y && (p1.x - p2.x).abs() == 1)
+}
+
+fn find_shapes(points: Vec<Point>) -> Vec<Vec<Point>> {
+    let mut shapes: Vec<Vec<Point>> = Vec::new();
+    
+    // Create a HashSet for quick lookup to check if a point exists
+    let points_set: std::collections::HashSet<_> = points.iter().cloned().collect();
+
+    for &point in points.iter() {
+        // Only proceed if the point is a potential corner point
+        if points_set.contains(&Point { x: point.x - 1, y: point.y }) &&
+           points_set.contains(&Point { x: point.x, y: point.y - 1 }) {
+            continue;
+        }
+        // Start forming a shape from the corner point
+        let mut current_shape: Vec<Point> = Vec::new();
+        let mut current_point = point;
+        
+        loop {
+            // Add the current point to the shape
+            current_shape.push(current_point);
+
+            // Look for the next point in the shape
+            let next_point_options = [
+                Point { x: current_point.x + 1, y: current_point.y },
+                Point { x: current_point.x, y: current_point.y + 1 }
+            ];
+            
+            // Choose the next point that is in the set and not already part of the shape
+            let next_point = next_point_options
+                .iter()
+                .find(|&&p| points_set.contains(&p) && !current_shape.contains(&p));
+            
+            match next_point {
+                Some(&p) => current_point = p,
+                None => break, // No more points to add, the shape is complete
+            }
+        }
+        
+        // Only add shapes with more than 1 point
+        if current_shape.len() > 1 {
+            shapes.push(current_shape);
+        }
+    }
+    
+    shapes
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Rectangle {
+    top_left: Point,
+    width: i32,
+    height: i32,
+}
+
+fn merge_tiles_into_shapes(tiles: Vec<Point>, cell_size: i32) -> Vec<Rectangle> {
+    let mut shapes = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+
+    for &tile in &tiles {
+        if visited.contains(&tile) {
+            continue; // Skip already visited tiles
+        }
+
+        // Start a new shape from this tile
+        let mut shape = Rectangle {
+            top_left: tile,
+            width: cell_size,
+            height: cell_size,
+        };
+
+        // Try to expand the shape to the right as far as possible
+        while tiles.contains(&Point {
+            x: shape.top_left.x + shape.width,
+            y: shape.top_left.y,
+        }) {
+            shape.width += cell_size;
+            visited.insert(Point {
+                x: shape.top_left.x + shape.width,
+                y: shape.top_left.y,
+            });
+        }
+
+        // Try to expand the shape downward as far as possible
+        let original_width = shape.width;
+        while tiles.iter().any(|&p| {
+            p.x >= shape.top_left.x
+                && p.x < shape.top_left.x + original_width
+                && p.y == shape.top_left.y + shape.height
+        }) {
+            shape.height += cell_size;
+            for w in (shape.top_left.x..shape.top_left.x + original_width).step_by(cell_size as usize) {
+                visited.insert(Point { x: w, y: shape.top_left.y + shape.height });
+            }
+        }
+
+        shapes.push(shape);
+    }
+
+    shapes
+}
+
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands.spawn(LdtkWorldBundle {
+        ldtk_handle: asset_server.load("world.ldtk"),
+        ..default()
+    });
 }
 
 #[derive(Debug, Component)]
@@ -207,7 +400,7 @@ fn spawn_player(
         RigidBody::KinematicVelocityBased,
         Collider::cuboid(6.0, 9.0),
         GravityDir {
-            dir: 1,
+            dir: 0,
         },
         Velocity::default(),
         Acceleration::default(),
@@ -373,21 +566,21 @@ fn spawn_player(
     commands.entity(player)
         .add_child(player_limbs);
 
-    commands.spawn((
-        RigidBody::Fixed,
-        Collider::cuboid(2000.0, 10.0),
-        TransformBundle::from_transform(Transform::from_xyz(-1000.0, -40.0, 0.0)),
-    ));
+    // commands.spawn((
+        // RigidBody::Fixed,
+        // Collider::cuboid(2000.0, 10.0),
+        // TransformBundle::from_transform(Transform::from_xyz(-1000.0, -40.0, 0.0)),
+    // ));
 
-    commands.spawn((
-        RigidBody::Fixed,
-        Collider::cuboid(40.0, 10.0),
-        TransformBundle::from_transform(Transform::from_xyz(-60.0, 20.0, 0.0)),
-    ));
+    // commands.spawn((
+        // RigidBody::Fixed,
+        // Collider::cuboid(40.0, 10.0),
+        // TransformBundle::from_transform(Transform::from_xyz(-60.0, 20.0, 0.0)),
+    // ));
 
-    commands.spawn((
-        RigidBody::Fixed,
-        Collider::cuboid(40.0, 10.0),
-        TransformBundle::from_transform(Transform::from_xyz(60.0, 20.0, 0.0)),
-    ));
+    // commands.spawn((
+        // RigidBody::Fixed,
+        // Collider::cuboid(40.0, 10.0),
+        // TransformBundle::from_transform(Transform::from_xyz(60.0, 20.0, 0.0)),
+    // ));
 }
