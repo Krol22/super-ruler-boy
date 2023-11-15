@@ -53,7 +53,7 @@ pub fn bounce_off_ceiling(
         let shape_rot = 0.0;
         let max_toi = 1.0;
         let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED, 
+            flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
             ..default()
         };
 

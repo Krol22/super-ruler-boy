@@ -13,8 +13,6 @@ pub fn horizontal_controls (
             continue;
         }
 
-        let mut translation_x = 0.0;
-
         if keyboard_input.pressed(KeyCode::Left) {
             let shape = Collider::cuboid(6.0, 9.0 + player.stretch / 2.0);
             let shape_pos = transform.translation.truncate() + Vec2::new(-0.2, player.stretch / 2.0 + 0.1);
@@ -23,7 +21,7 @@ pub fn horizontal_controls (
             let max_toi = 1.0;
 
             let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED, 
+                flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
                 ..default()
             };
 
@@ -34,7 +32,7 @@ pub fn horizontal_controls (
                 continue
             }
 
-            translation_x = -1.0;
+            acceleration.current.x = -PLAYER_HORIZONTAL_MOVE_SPEED;
         } else if keyboard_input.pressed(KeyCode::Right) {
             let shape = Collider::cuboid(6.0, 9.0 + player.stretch / 2.0);
             let shape_pos = transform.translation.truncate() + Vec2::new(0.2, player.stretch / 2.0 + 0.1);
@@ -43,7 +41,7 @@ pub fn horizontal_controls (
             let max_toi = 1.0;
 
             let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED, 
+                flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
                 ..default()
             };
 
@@ -54,10 +52,9 @@ pub fn horizontal_controls (
                 continue
             }
 
-            translation_x = 1.0;
+            acceleration.current.x = PLAYER_HORIZONTAL_MOVE_SPEED;
         }
 
-        acceleration.current.x = translation_x * PLAYER_HORIZONTAL_MOVE_SPEED;
     }
 }
 
@@ -84,7 +81,7 @@ pub fn horizontal_controls_on_ceiling (
         let max_toi = 4.0;
         let solid = true;
         let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED, 
+            flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
             ..default()
         };
 
@@ -103,7 +100,7 @@ pub fn horizontal_controls_on_ceiling (
         let max_toi = 4.0;
         let solid = true;
         let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED, 
+            flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
             ..default()
         };
 

@@ -9,4 +9,6 @@ pub struct Player {
     pub grabbed_ceiling: bool,
 
     pub has_x_collision: isize, // #TODO enum
+    pub is_invincible: bool,
+    pub invincible_timer: Timer,
 }
