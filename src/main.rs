@@ -1,12 +1,12 @@
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::Time};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}};
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkEntity, EntityInstance};
 use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter}};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
 use kt_movement::MovementPlugin;
-use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT};
+use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME};
 
 fn main() {
     App::new()
@@ -28,6 +28,7 @@ fn main() {
         .insert_resource(LevelSelection::Index(0))
         .register_ldtk_int_cell::<WallBundle>(1)
         .register_ldtk_entity::<SpikesBundle>("Spikes")
+        .register_ldtk_entity::<CheckpointBundle>("Checkpoint")
         .add_systems(Update, setup_walls)
         .add_systems(Update, (
     handle_animation,
@@ -36,22 +37,99 @@ fn main() {
     handle_stretching,
     flip_depend_on_velocity,
     handle_player_hurt_collision,
+    handle_activate_checkpoint,
+    checkpoint_sprites_handle,
+    respawn_player,
 ).chain()).run();
 }
 
-fn handle_player_hurt_collision(
-    mut q_player: Query<(&mut Transform, &mut Velocity, &mut Player)>,
+fn handle_activate_checkpoint(
+    q_player: Query<(&Transform, &Velocity), With<Player>>,
+    mut q_checkpoints: Query<&mut Checkpoint>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
 ) {
-    for (
-        transform,
-        mut velocity,
-        mut player
-    ) in q_player.iter_mut() {
-        if player.is_invincible {
-            return;
+    for (transform, velocity) in q_player.iter() {
+        let shape = Collider::cuboid(6.0, 9.0);
+        let shape_pos = transform.translation.truncate();
+        let shape_vel = Vec2::new(velocity.current.x * time.delta_seconds(), velocity.current.y * time.delta_seconds());
+        let shape_rot = 0.0;
+        let max_toi = 1.0;
+        let filter = QueryFilter {
+            flags: QueryFilterFlags::EXCLUDE_SOLIDS,
+            ..default()
+        };
+
+        if let Some((entity, _hit)) = rapier_context.cast_shape(
+            shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
+        ) {
+            let checkpoint = q_checkpoints.get(entity);
+
+            match checkpoint {
+                Ok(checkpoint) => {
+                    if checkpoint.is_active {
+                        continue;
+                    }
+                },
+                Err(..) => continue,
+            };
+
+            for mut checkpoint in q_checkpoints.iter_mut() {
+                checkpoint.is_active = false;
+            }
+
+            let checkpoint_to_activate = q_checkpoints.get_mut(entity);
+            match checkpoint_to_activate {
+                Ok(mut checkpoint_to_activate) => checkpoint_to_activate.is_active = true,
+                Err(..) => continue,
+            }
         }
+    }
+}
+
+fn checkpoint_sprites_handle(
+    mut q_checkpoints: Query<(&mut TextureAtlasSprite, &Checkpoint)>,
+) {
+    for (mut sprite, checkpoint) in q_checkpoints.iter_mut() {
+        if checkpoint.is_active {
+            sprite.index = 2;
+        } else {
+            sprite.index = 1;
+        }
+    }
+}
+
+fn respawn_player(
+    mut q_player: Query<(&mut Transform, &mut Player)>,
+    q_checkpoint: Query<(&Transform, &Checkpoint), Without<Player>>,
+    time: Res<Time>,
+) {
+    for (mut transform, mut player) in q_player.iter_mut() {
+        player.respawn_timer.tick(time.delta());
+
+        if player.respawn_timer.just_finished() {
+            let mut checkpoint_position: Vec2 = Vec2::ZERO;
+
+            for (checkpoint_transform, checkpoint) in q_checkpoint.iter() {
+                if checkpoint.is_active {
+                    checkpoint_position = checkpoint_transform.translation.truncate();
+                    break;
+                }
+            }
+
+            transform.translation.x = checkpoint_position.x;
+            transform.translation.y = checkpoint_position.y;
+        }
+    }
+}
+
+fn handle_player_hurt_collision(
+    mut q_player: Query<(&mut Transform, &Velocity, &mut Player)>,
+    q_hit: Query<&HitComponent>,
+    rapier_context: Res<RapierContext>,
+    time: Res<Time>,
+) {
+    for (transform, velocity, mut player) in q_player.iter_mut() {
 
         let shape = Collider::cuboid(6.0, 9.0);
         let shape_pos = transform.translation.truncate();
@@ -66,9 +144,11 @@ fn handle_player_hurt_collision(
         if let Some((entity, hit)) = rapier_context.cast_shape(
             shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
         ) {
-            velocity.current.y = hit.witness2.normalize().y * -1000.0;
-            velocity.current.x = transform.scale.x * -1000.0;
-            player.is_invincible = true;
+            let hit_component = q_hit.get(entity);
+            dbg!(hit_component);
+            if hit_component.is_ok() {
+                player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
+            }
             continue
         }
     }
@@ -171,6 +251,17 @@ fn is_point_in_rectangle(rect: &Rectangle, point: &Point) -> bool {
         && point.y < rect.top_left.y + rect.height as i32
 }
 
+#[derive(Default, Bundle, LdtkEntity)]
+pub struct CheckpointBundle {
+    #[from_entity_instance]
+    pub sensor_bundle: SensorBundle,
+    pub checkpoint: Checkpoint,
+    #[sprite_sheet_bundle]
+    pub sprite_sheet_bundle: SpriteSheetBundle,
+}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct HitComponent {}
 
 #[derive(Default, Bundle, LdtkEntity)]
 pub struct SpikesBundle {
@@ -178,6 +269,7 @@ pub struct SpikesBundle {
     pub sensor_bundle: SensorBundle,
     #[sprite_sheet_bundle]
     pub sprite_sheet_bundle: SpriteSheetBundle,
+    pub hit_component: HitComponent,
 }
 
 #[derive(Clone, Component, Debug, Default)]
@@ -231,6 +323,10 @@ impl From<&EntityInstance> for SensorBundle {
         match entity_instance.identifier.as_ref() {
             "Spikes" => SensorBundle {
                 collider: Collider::cuboid(8.0, 8.0), // #TODO pull out from editor
+                ..default()
+            },
+            "Checkpoint" => SensorBundle {
+                collider: Collider::cuboid(8.0, 8.0),
                 ..default()
             },
             _ => SensorBundle::default()
@@ -480,6 +576,9 @@ fn spawn_player(
 
     let texture_atlas_handle = texture_atlases.add(texture_atlas);
 
+    let mut respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
+    respawn_timer.pause();
+
     let player = commands.spawn((
         SpatialBundle::from_transform(Transform::from_xyz(0.0, 100.0, 0.0)),
         RigidBody::KinematicVelocityBased,
@@ -498,6 +597,7 @@ fn spawn_player(
             ..default()
         },
         Player {
+            respawn_timer,
             ..default()
         },
     )).id();
