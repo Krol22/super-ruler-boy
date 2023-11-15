@@ -22,7 +22,7 @@ fn spawn_camera(
                 hdr: true,
                 ..default()
             },
-            transform: Transform::from_xyz(200.0, 100.0, 0.0),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
             ..default()
         },
         // BloomSettings {

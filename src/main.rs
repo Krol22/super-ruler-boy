@@ -1,4 +1,4 @@
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}};
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkEntity, EntityInstance};
@@ -6,7 +6,7 @@ use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController,
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
 use kt_movement::MovementPlugin;
-use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME};
+use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
 
 fn main() {
     App::new()
@@ -40,7 +40,57 @@ fn main() {
     handle_activate_checkpoint,
     checkpoint_sprites_handle,
     respawn_player,
+    follow_player_with_camera,
 ).chain()).run();
+}
+
+fn follow_player_with_camera(
+    q_player: Query<&Transform, (With<Player>, Without<Camera>)>,
+    mut q_camera: Query<&mut Transform, With<Camera>>,
+) {
+    let player = if let Ok(player) = q_player.get_single() {
+        player
+    } else {
+        return
+    };
+
+    let mut camera = if let Ok(camera) = q_camera.get_single_mut() {
+        camera
+    } else {
+        return
+    };
+
+    let left_edge = 
+        camera.translation.x - 
+        ASPECT_RATIO_X * ((PLAYER_CAMERA_MARGIN_X as f32 / 2.0) / 100.0);
+
+    let right_edge =
+        camera.translation.x +
+        ASPECT_RATIO_X * ((PLAYER_CAMERA_MARGIN_X as f32 / 2.0) / 100.0);
+
+    let top_edge = 
+        camera.translation.y + 
+        ASPECT_RATIO_Y * ((PLAYER_CAMERA_MARGIN_Y as f32 / 2.0) / 100.0);
+
+    let bottom_edge =
+        camera.translation.y -
+        ASPECT_RATIO_Y * ((PLAYER_CAMERA_MARGIN_Y as f32 / 2.0) / 100.0);
+
+    if player.translation.x < left_edge {
+        camera.translation.x -= left_edge - player.translation.x;
+    }
+
+    if player.translation.x > right_edge {
+        camera.translation.x += player.translation.x - right_edge;
+    }
+
+    if player.translation.y > top_edge {
+        camera.translation.y += player.translation.y - top_edge;
+    }
+
+    if player.translation.y < bottom_edge {
+        camera.translation.y -= bottom_edge - player.translation.y;
+    }
 }
 
 fn handle_activate_checkpoint(
@@ -145,7 +195,6 @@ fn handle_player_hurt_collision(
             shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
         ) {
             let hit_component = q_hit.get(entity);
-            dbg!(hit_component);
             if hit_component.is_ok() {
                 player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
             }
@@ -179,7 +228,6 @@ fn setup_walls(
         return;
     }
 
-    dbg!(points.len());
     let points_with_neighbors = find_points_with_neighbors(&points);
     let neighbor_set: std::collections::HashSet<_> = points_with_neighbors.into_iter().collect();
     points.retain(|p| !neighbor_set.contains(p));
@@ -318,8 +366,6 @@ pub struct SensorBundle {
 
 impl From<&EntityInstance> for SensorBundle {
     fn from(entity_instance: &EntityInstance) -> SensorBundle {
-        dbg!(&entity_instance.identifier);
-
         match entity_instance.identifier.as_ref() {
             "Spikes" => SensorBundle {
                 collider: Collider::cuboid(8.0, 8.0), // #TODO pull out from editor
@@ -465,7 +511,6 @@ fn handle_extension_stretch(
                 _ => continue,
             }
 
-            // dbg!(animator.current_frame);
             let offsets = extension_offset.get(&animator.current_animation);
             let offsets = match offsets {
                 Some(offsets) => offsets,
