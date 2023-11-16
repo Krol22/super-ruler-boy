@@ -1,6 +1,7 @@
 use bevy::prelude::{Query, Transform, Res, Input, KeyCode, Vec2, default};
 use bevy_rapier2d::prelude::{RapierContext, QueryFilter, QueryFilterFlags};
 use kt_common::components::{player::Player, jump::Jump, gravity::GravityDir};
+use kt_util::constants::{PLAYER_MAXIMUM_STRETCH, PLAYER_STRETCH_SPEED};
 
 pub fn stretching_controls(
     mut q_player: Query<(&Transform, &mut Player, &mut Jump)>,
@@ -18,8 +19,8 @@ pub fn stretching_controls(
 
         if keyboard_input.pressed(KeyCode::Space) {
 
-            if player.stretch >= 40.0 {
-                player.stretch = 40.0;
+            if player.stretch >= PLAYER_MAXIMUM_STRETCH {
+                player.stretch = PLAYER_MAXIMUM_STRETCH;
                 continue;
             }
 
@@ -58,11 +59,11 @@ pub fn stretching_controls(
                 continue;
             }
 
-            player.stretch += 1.0;
+            player.stretch += PLAYER_STRETCH_SPEED;
             continue;
         }
 
-        player.stretch -= 1.0;
+        player.stretch -= PLAYER_STRETCH_SPEED;
 
         if player.stretch < 0.0 {
             player.stretch = 0.0;

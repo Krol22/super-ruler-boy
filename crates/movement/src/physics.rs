@@ -1,5 +1,3 @@
-use std::ops::Mul;
-
 use bevy::{prelude::{Query, Res, Vec2}, time::Time};
 use bevy_rapier2d::prelude::{KinematicCharacterController, KinematicCharacterControllerOutput};
 use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir, jump::Jump};
@@ -10,7 +8,7 @@ pub fn apply_velocity_to_kinematic_controller(
 ) {
     for (mut kcc, mut velocity, mut acceleration, gravity_dir) in q_kinematic_controller.iter_mut() {
         // Apply gravity
-        velocity.current += Vec2::new(0.0, -9.0 * gravity_dir.dir as f32);
+        velocity.current += Vec2::new(0.0, -0.6 * gravity_dir.dir as f32);
 
         // Movement
         velocity.current += Vec2::new(
@@ -19,13 +17,14 @@ pub fn apply_velocity_to_kinematic_controller(
         );
 
         velocity.current = velocity.current.clamp(-velocity.max, velocity.max);
-        kcc.translation = Some(velocity.current.mul(time.delta_seconds()));
+        kcc.translation = Some(velocity.current);
 
         // Damp velocity
-        velocity.current = Vec2::new(
-            velocity.current.x * (1.0 - velocity.damping),
-            velocity.current.y * (1.0 - velocity.damping)
-        );
+        velocity.current.x *= 1.0 - velocity.damping;
+
+        if velocity.current.x.abs() < 0.01 {
+            velocity.current.x = 0.0;
+        }
 
         // Clear acceleration
         acceleration.current = Vec2::ZERO;

@@ -8,7 +8,7 @@ pub fn horizontal_controls (
     rapier_context: Res<RapierContext>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    for (mut acceleration, player, transform) in q_player.iter_mut() {
+    for (mut velocity, player, transform) in q_player.iter_mut() {
         if player.grabbed_ceiling {
             continue;
         }
@@ -32,11 +32,11 @@ pub fn horizontal_controls (
             if let Some(_entity) = rapier_context.cast_shape(
                 shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
             ) {
-                acceleration.current.x = 0.0;
+                velocity.current.x = 0.0;
                 continue
             }
 
-            acceleration.current.x = -PLAYER_HORIZONTAL_MOVE_SPEED;
+            velocity.current.x = -PLAYER_HORIZONTAL_MOVE_SPEED;
         } else if keyboard_input.pressed(KeyCode::Right) {
             let shape = Collider::cuboid(6.0, 9.0 + player.stretch / 2.0);
             let shape_pos = transform.translation.truncate() + Vec2::new(0.2, player.stretch / 2.0 + 0.1);
@@ -52,11 +52,11 @@ pub fn horizontal_controls (
             if let Some(_entity) = rapier_context.cast_shape(
                 shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
             ) {
-                acceleration.current.x = 0.0;
+                velocity.current.x = 0.0;
                 continue
             }
 
-            acceleration.current.x = PLAYER_HORIZONTAL_MOVE_SPEED;
+            velocity.current.x = PLAYER_HORIZONTAL_MOVE_SPEED;
         }
 
     }

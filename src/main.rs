@@ -1,12 +1,13 @@
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind};
 use bevy::prelude::PluginGroup;
 
-use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkEntity, EntityInstance};
+use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkEntity, EntityInstance, SetClearColor, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter}};
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
+use bevy_parallax::{ParallaxPlugin, ParallaxMoveEvent};
 
 fn main() {
     App::new()
@@ -23,9 +24,18 @@ fn main() {
         .add_plugins(CommonPlugin {})
         .add_plugins(CorePlugin {})
         .add_plugins(MovementPlugin {})
+        .add_plugins(ParallaxPlugin {})
         .add_systems(Startup, setup)
         .add_systems(Startup, spawn_player)
+        .edit_schedule(Update, |schedule| {
+            schedule.set_executor_kind(ExecutorKind::SingleThreaded);
+        })
         .insert_resource(LevelSelection::Index(0))
+        .insert_resource(LevelDimensions::default())
+        .insert_resource(LdtkSettings {
+            level_background: LevelBackground::Nonexistent,
+            ..default()
+        })
         .register_ldtk_int_cell::<WallBundle>(1)
         .register_ldtk_entity::<SpikesBundle>("Spikes")
         .register_ldtk_entity::<CheckpointBundle>("Checkpoint")
@@ -40,13 +50,39 @@ fn main() {
     handle_activate_checkpoint,
     checkpoint_sprites_handle,
     respawn_player,
+    update_level_dimensions,
     follow_player_with_camera,
 ).chain()).run();
 }
 
-fn follow_player_with_camera(
+#[derive(Resource, Default, Debug, Clone)]
+pub struct LevelDimensions {
+    pub width: f32,
+    pub height: f32,
+}
+
+fn update_level_dimensions (
+    q_layers: Query<&LayerMetadata>,
+    mut level_dimensions: ResMut<LevelDimensions>,
+) {
+    for layer in q_layers.iter() {
+        if layer.identifier != "Tiles" {
+            continue;
+        }
+
+        let width = layer.c_wid * layer.grid_size;
+        let height = layer.c_hei * layer.grid_size;
+
+        level_dimensions.width = width as f32;
+        level_dimensions.height = height as f32;
+    }
+}
+
+pub fn follow_player_with_camera(
     q_player: Query<&Transform, (With<Player>, Without<Camera>)>,
-    mut q_camera: Query<&mut Transform, With<Camera>>,
+    mut q_camera: Query<(&mut Transform, Entity), With<Camera>>,
+    mut move_event_writer: EventWriter<ParallaxMoveEvent>,
+    level_dimensions: Res<LevelDimensions>,
 ) {
     let player = if let Ok(player) = q_player.get_single() {
         player
@@ -54,43 +90,73 @@ fn follow_player_with_camera(
         return
     };
 
-    let mut camera = if let Ok(camera) = q_camera.get_single_mut() {
+    let (mut camera, entity) = if let Ok(camera) = q_camera.get_single_mut() {
         camera
     } else {
         return
     };
 
-    let left_edge = 
-        camera.translation.x - 
-        ASPECT_RATIO_X * ((PLAYER_CAMERA_MARGIN_X as f32 / 2.0) / 100.0);
+    let x_margin = ASPECT_RATIO_X * ((PLAYER_CAMERA_MARGIN_X as f32 / 2.0) / 100.0);
+    let y_margin = ASPECT_RATIO_Y * ((PLAYER_CAMERA_MARGIN_Y as f32 / 2.0) / 100.0);
 
-    let right_edge =
-        camera.translation.x +
-        ASPECT_RATIO_X * ((PLAYER_CAMERA_MARGIN_X as f32 / 2.0) / 100.0);
+    let left_edge = camera.translation.x - x_margin;
+    let right_edge = camera.translation.x + x_margin;
 
-    let top_edge = 
-        camera.translation.y + 
-        ASPECT_RATIO_Y * ((PLAYER_CAMERA_MARGIN_Y as f32 / 2.0) / 100.0);
+    let top_edge = camera.translation.y + y_margin;
+    let bottom_edge = camera.translation.y - y_margin;
 
-    let bottom_edge =
-        camera.translation.y -
-        ASPECT_RATIO_Y * ((PLAYER_CAMERA_MARGIN_Y as f32 / 2.0) / 100.0);
+    let mut speed = Vec2::ZERO;
+    let mut new_pos_x = camera.translation.x;
 
     if player.translation.x < left_edge {
-        camera.translation.x -= left_edge - player.translation.x;
+        new_pos_x = camera.translation.x - (left_edge - player.translation.x);
+        speed.x = -1.0;
     }
 
     if player.translation.x > right_edge {
-        camera.translation.x += player.translation.x - right_edge;
+        new_pos_x = camera.translation.x + player.translation.x - right_edge;
+        speed.x = 1.0;
     }
 
+    if player.translation.x - ASPECT_RATIO_X / 2.0 + x_margin <= 0.0 {
+        new_pos_x = ASPECT_RATIO_X / 2.0;
+        speed.x = 0.0;
+    }
+
+    if player.translation.x + ASPECT_RATIO_X / 2.0 - x_margin >= level_dimensions.width {
+        new_pos_x = level_dimensions.width - ASPECT_RATIO_X / 2.0;
+        speed.x = 0.0;
+    }
+
+    let mut new_pos_y = camera.translation.y;
+
     if player.translation.y > top_edge {
-        camera.translation.y += player.translation.y - top_edge;
+        new_pos_y = camera.translation.y + (player.translation.y - top_edge);
+        speed.y = 1.0;
     }
 
     if player.translation.y < bottom_edge {
-        camera.translation.y -= bottom_edge - player.translation.y;
+        new_pos_y = camera.translation.y - (bottom_edge - player.translation.y);
+        speed.y = -1.0;
     }
+
+    if player.translation.y - ASPECT_RATIO_Y / 2.0 + y_margin <= 0.0 {
+        new_pos_y = ASPECT_RATIO_Y / 2.0;
+        speed.y = 0.0;
+    }
+
+    if player.translation.y + ASPECT_RATIO_Y / 2.0 - y_margin >= level_dimensions.height {
+        new_pos_y = level_dimensions.height - ASPECT_RATIO_Y / 2.0;
+        speed.y = 0.0;
+    }
+
+    camera.translation.x = new_pos_x;
+    camera.translation.y = new_pos_y;
+
+    move_event_writer.send(ParallaxMoveEvent {
+        camera_move_speed: speed,
+        camera: entity,
+    });
 }
 
 fn handle_activate_checkpoint(
@@ -641,7 +707,8 @@ fn spawn_player(
             dir: 0,
         },
         Velocity {
-            damping: 0.05,
+            damping: 0.1,
+            max: Vec2::new(2.0, 4.0),
             ..default()
         },
         Acceleration::default(),
@@ -673,7 +740,7 @@ fn spawn_player(
     let legs_move_animation = Animation {
         frames: (4..12).collect(),
         looping: true,
-        fps: 7,
+        fps: 12,
     };
 
     let legs_extending_animation = Animation {
@@ -715,7 +782,7 @@ fn spawn_player(
     let body_move_animation = Animation {
         frames: (17..25).collect(),
         looping: true,
-        fps: 7,
+        fps: 12,
     };
 
     let body_extending_animation = Animation {
@@ -757,7 +824,7 @@ fn spawn_player(
     let hands_move_animation = Animation {
         frames: (30..38).collect(),
         looping: true,
-        fps: 7,
+        fps: 12,
     };
 
     let hands_extending_animation = Animation {

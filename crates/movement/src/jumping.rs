@@ -1,7 +1,7 @@
 use bevy::{prelude::{Query, Res, Input, KeyCode, Transform, Vec2, default, With}, time::{Time, Timer}};
 use bevy_rapier2d::prelude::{KinematicCharacterControllerOutput, RapierContext, Collider, QueryFilter, QueryFilterFlags, KinematicCharacterController};
 use kt_common::components::{velocity::Velocity, jump::Jump, player::Player};
-use kt_util::constants::{PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE};
+use kt_util::constants::{PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE, JUMP_HOLD_TIMER};
 
 pub fn jumping_controls (
     mut q_player: Query<(&mut Velocity, &mut Jump, &Player)>,
@@ -20,7 +20,7 @@ pub fn jumping_controls (
 
             velocity.current.y = PLAYER_JUMP_SPEED;
             jump.is_jumping = true;
-            jump.jump_timer = Timer::from_seconds(1.0, bevy::time::TimerMode::Once);
+            jump.jump_timer = Timer::from_seconds(JUMP_HOLD_TIMER, bevy::time::TimerMode::Once);
         }
 
         if keyboard_input.pressed(KeyCode::X) && jump.is_jumping && !jump.jump_timer.finished() {

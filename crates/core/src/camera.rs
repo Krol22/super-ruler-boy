@@ -1,4 +1,5 @@
 use std::time::Duration;
+use bevy_parallax::*;
 
 use bevy::{prelude::*, window::PrimaryWindow, core_pipeline::bloom::BloomSettings};
 use bevy_tweening::{Animator, Tween, EaseFunction, lens::TransformPositionLens};
@@ -6,6 +7,7 @@ use kt_util::constants::{ASPECT_RATIO_X, ASPECT_RATIO_Y};
 
 fn spawn_camera(
     mut commands: Commands,
+    mut create_parallax: EventWriter<CreateParallaxEvent>,
 ) {
     let tween = Tween::new(
         EaseFunction::BounceOut,
@@ -16,7 +18,7 @@ fn spawn_camera(
         },
     );
 
-    commands.spawn((
+    let camera = commands.spawn((
         Camera2dBundle {
             camera: Camera {
                 hdr: true,
@@ -25,12 +27,30 @@ fn spawn_camera(
             transform: Transform::from_xyz(0.0, 0.0, 0.0),
             ..default()
         },
+        ParallaxCameraComponent::default(),
         // BloomSettings {
             // intensity: 0.5,
             // ..default()
         // },
         // Animator::new(tween)
-    ));
+    )).id();
+
+    create_parallax.send(CreateParallaxEvent {
+        layers_data: vec![
+            LayerData {
+                speed: LayerSpeed::Bidirectional(0.2, 0.2),
+                repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
+                path: "sprites/background.png".to_string(),
+                tile_size: Vec2::new(ASPECT_RATIO_X, ASPECT_RATIO_Y),
+                cols: 1,
+                rows: 1,
+                scale: 2.0,
+                z: -1.0,
+                ..default()
+            },
+        ],
+        camera,
+    })
 }
 
 pub fn auto_scale_sys(
