@@ -4,13 +4,17 @@ use kt_common::components::{velocity::Velocity, jump::Jump, player::Player};
 use kt_util::constants::{PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE};
 
 pub fn jumping_controls (
-    mut q_player: Query<(&mut Velocity, &mut Jump)>,
+    mut q_player: Query<(&mut Velocity, &mut Jump, &Player)>,
     keyboard_input: Res<Input<KeyCode>>,
     time: Res<Time>,
 ) {
-    for (mut velocity, mut jump) in q_player.iter_mut() {
+    for (mut velocity, mut jump, player) in q_player.iter_mut() {
         if keyboard_input.just_pressed(KeyCode::X) {
             if !jump.can_jump {
+                continue;
+            }
+
+            if player.is_respawning {
                 continue;
             }
 

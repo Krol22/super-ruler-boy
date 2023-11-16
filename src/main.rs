@@ -168,9 +168,14 @@ fn respawn_player(
             }
 
             transform.translation.x = checkpoint_position.x;
-            transform.translation.y = checkpoint_position.y;
+            transform.translation.y = checkpoint_position.y + 5.0;
+        }
+
+        if player.respawn_timer.finished() {
+            player.is_respawning = false;
         }
     }
+
 }
 
 fn handle_player_hurt_collision(
@@ -180,6 +185,9 @@ fn handle_player_hurt_collision(
     time: Res<Time>,
 ) {
     for (transform, velocity, mut player) in q_player.iter_mut() {
+        if !player.respawn_timer.finished() && !player.respawn_timer.paused() {
+            continue;
+        }
 
         let shape = Collider::cuboid(6.0, 9.0);
         let shape_pos = transform.translation.truncate();
@@ -191,12 +199,13 @@ fn handle_player_hurt_collision(
             ..default()
         };
 
-        if let Some((entity, hit)) = rapier_context.cast_shape(
+        if let Some((entity, _hit)) = rapier_context.cast_shape(
             shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
         ) {
             let hit_component = q_hit.get(entity);
             if hit_component.is_ok() {
                 player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
+                player.is_respawning = true;
             }
             continue
         }

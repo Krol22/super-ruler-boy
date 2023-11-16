@@ -10,4 +10,5 @@ pub struct Player {
 
     pub has_x_collision: isize, // #TODO enum
     pub respawn_timer: Timer,
+    pub is_respawning: bool,
 }

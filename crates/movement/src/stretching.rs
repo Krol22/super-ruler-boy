@@ -12,6 +12,10 @@ pub fn stretching_controls(
             continue;
         }
 
+        if player.is_respawning {
+            continue;
+        }
+
         if keyboard_input.pressed(KeyCode::Space) {
 
             if player.stretch >= 40.0 {

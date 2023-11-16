@@ -13,6 +13,10 @@ pub fn horizontal_controls (
             continue;
         }
 
+        if player.is_respawning {
+            continue;
+        }
+
         if keyboard_input.pressed(KeyCode::Left) {
             let shape = Collider::cuboid(6.0, 9.0 + player.stretch / 2.0);
             let shape_pos = transform.translation.truncate() + Vec2::new(-0.2, player.stretch / 2.0 + 0.1);

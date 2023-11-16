@@ -1,8 +1,8 @@
 use std::ops::Mul;
 
 use bevy::{prelude::{Query, Res, Vec2}, time::Time};
-use bevy_rapier2d::prelude::KinematicCharacterController;
-use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir};
+use bevy_rapier2d::prelude::{KinematicCharacterController, KinematicCharacterControllerOutput};
+use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir, jump::Jump};
 
 pub fn apply_velocity_to_kinematic_controller(
     mut q_kinematic_controller: Query<(&mut KinematicCharacterController, &mut Velocity, &mut Acceleration, &GravityDir)>,
@@ -32,3 +32,12 @@ pub fn apply_velocity_to_kinematic_controller(
     }
 }
 
+pub fn clear_velocity_if_kinematic_on_ground(
+    mut q_kinematic: Query<(&KinematicCharacterControllerOutput, &Jump, &mut Velocity)>,
+) {
+    for (kcco, jump, mut velocity) in q_kinematic.iter_mut() {
+        if kcco.grounded && !jump.is_jumping {
+            velocity.current.y = 0.0;
+        }
+    }
+}
