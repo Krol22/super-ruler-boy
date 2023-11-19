@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource, Added, ImagePlugin}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode, WindowMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind, diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource, Added, ImagePlugin}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode, WindowMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind, diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}, reflect::Reflect};
 use bevy::prelude::PluginGroup;
 
-use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkEntity, EntityInstance, SetClearColor, LdtkSettings, LevelBackground, LayerMetadata};
+use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt, LdtkFields}, LdtkEntity, EntityInstance, SetClearColor, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
-use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter}};
+use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength}};
 use bevy_tweening::{Tween, EaseFunction, lens::TransformScaleLens};
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
@@ -48,9 +48,11 @@ fn main() {
         .register_ldtk_entity::<SpikesBundle>("Spikes")
         .register_ldtk_entity::<SpawnPointBundle>("SpawnPoint")
         .register_ldtk_entity::<CheckpointBundle>("Checkpoint")
+        .register_ldtk_entity::<ElevatorBundle>("Elevator")
         .add_systems(Update, toggle_vsync)
         .add_systems(Update, setup_walls)
         .add_systems(Update, process_spawn_point)
+        .add_systems(Update, process_elevator)
         .add_systems(Update, (
     restart_player_pos,
     handle_animation,
@@ -64,6 +66,7 @@ fn main() {
     respawn_player,
     update_level_dimensions,
     follow_player_with_camera,
+    elevator_handle,
 ).chain())
     .edit_schedule(Update, |schedule| {
         schedule.set_executor_kind(ExecutorKind::SingleThreaded);
@@ -88,6 +91,76 @@ fn restart_player_pos(
             player_transform.translation.x = transform.translation.x;
             player_transform.translation.y = transform.translation.y;
         }
+    }
+}
+
+fn elevator_handle(
+    mut q_elevator: Query<(&mut Transform, &mut Elevator, &Level)>
+) {
+    for (mut transform, mut elevator, level) in q_elevator.iter_mut() {
+        if level.0 == 0 {
+            continue;
+        }
+
+        transform.translation.x += elevator.direction.x;
+        transform.translation.y += elevator.direction.y;
+
+        if level.0 < 0 {
+            if transform.translation.y > elevator.initial_position.y {
+                elevator.direction.y = -elevator.direction.y
+            }
+
+            if transform.translation.y < elevator.initial_position.y + level.0 as f32 * 24.0 {
+                elevator.direction.y = -elevator.direction.y
+            }
+
+            continue;
+        }
+
+        if level.0 > 0 {
+            if transform.translation.y > elevator.initial_position.y + level.0 as f32 * 24.0 {
+                elevator.direction.y = -elevator.direction.y
+            }
+
+            if transform.translation.y < elevator.initial_position.y {
+                elevator.direction.y = -elevator.direction.y
+            }
+        }
+
+    }
+}
+
+fn process_elevator(
+    q_entity: Query<(&Transform, &Level, Entity), Added<ElevatorInstance>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let texture_handle = asset_server.load("sprites/elevator.png");
+
+    for (transform, level, entity) in q_entity.iter() {
+        commands
+            .entity(entity)
+            .despawn();
+
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_xyz(
+                    transform.translation.x,
+                    transform.translation.y,
+                    0.0,
+                ),
+                texture: texture_handle.clone(),
+                ..default()
+            },
+            GravityScale(0.0),
+            Collider::cuboid(16.0, 5.5),
+            RigidBody::KinematicPositionBased,
+            Elevator {
+                direction: Vec2::new(0.0, 0.3),
+                initial_position: transform.translation.truncate(),
+            },
+            level.clone(),
+        ));
     }
 }
 
@@ -475,11 +548,38 @@ pub struct SpawnPointBundle {
     pub spawn_point: SpawnPoint,
 }
 
+#[derive(Default, Bundle, LdtkEntity)]
+pub struct ElevatorBundle {
+    #[with(Level::from_field)]
+    pub level: Level,
+    pub elevator: ElevatorInstance,
+}
+
 #[derive(Clone, Component, Debug, Default)]
 pub struct SpawnPoint {}
 
 #[derive(Clone, Component, Debug, Default)]
 pub struct WallDefinition {}
+
+#[derive(Clone, Component, Debug, Default, Reflect, PartialEq, PartialOrd)]
+pub struct Level(i32);
+
+impl Level {
+    pub fn from_field(entity_instance: &EntityInstance) -> Level {
+        Level(*entity_instance
+            .get_int_field("level")
+            .expect("expected entity to have non-nullable level string field"))
+    }
+}
+
+#[derive(Clone, Component, Default, Debug)]
+pub struct ElevatorInstance {}
+
+#[derive(Clone, Component, Default, Debug)]
+pub struct Elevator {
+    pub initial_position: Vec2,
+    pub direction: Vec2,
+}
 
 #[derive(Clone, Debug, Default, Bundle, LdtkIntCell)]
 pub struct WallBundle {

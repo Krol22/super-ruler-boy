@@ -41,7 +41,7 @@ pub fn clear_velocity_if_kinematic_on_ground(
 ) {
     for (kcco, jump, mut velocity) in q_kinematic.iter_mut() {
         if kcco.grounded && !jump.is_jumping {
-            velocity.current.y = 0.0;
+            velocity.current.y = -40.0;
         }
     }
 }
