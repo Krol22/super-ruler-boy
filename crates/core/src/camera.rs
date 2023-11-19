@@ -11,7 +11,7 @@ fn spawn_camera(
 ) {
     let tween = Tween::new(
         EaseFunction::BounceOut,
-        Duration::from_secs(2),
+        Duration::from_secs_f32(0.2),
         TransformPositionLens {
             start: Vec3::splat(0.01),
             end: Vec3::ONE,
@@ -28,23 +28,23 @@ fn spawn_camera(
             ..default()
         },
         ParallaxCameraComponent::default(),
-        // BloomSettings {
-            // intensity: 0.5,
-            // ..default()
-        // },
+        BloomSettings {
+            intensity: 0.1,
+            ..default()
+        },
         // Animator::new(tween)
     )).id();
 
     create_parallax.send(CreateParallaxEvent {
         layers_data: vec![
             LayerData {
-                speed: LayerSpeed::Bidirectional(0.2, 0.2),
+                speed: LayerSpeed::Bidirectional(0.2, 0.1),
                 repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
                 path: "sprites/background.png".to_string(),
-                tile_size: Vec2::new(ASPECT_RATIO_X, ASPECT_RATIO_Y),
+                tile_size: Vec2::new(622.0, 317.0),
                 cols: 1,
                 rows: 1,
-                scale: 2.0,
+                scale: 1.2,
                 z: -1.0,
                 ..default()
             },

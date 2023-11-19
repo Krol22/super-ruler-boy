@@ -1,14 +1,14 @@
 use bevy::prelude::{Query, Transform, Res, Input, KeyCode, Vec2, default};
 use bevy_rapier2d::prelude::{RapierContext, QueryFilter, QueryFilterFlags};
-use kt_common::components::{player::Player, jump::Jump, gravity::GravityDir};
+use kt_common::components::{player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity};
 use kt_util::constants::{PLAYER_MAXIMUM_STRETCH, PLAYER_STRETCH_SPEED};
 
 pub fn stretching_controls(
-    mut q_player: Query<(&Transform, &mut Player, &mut Jump)>,
+    mut q_player: Query<(&Transform, &mut Player, &mut Jump, &mut GravityDir)>,
     rapier_context: Res<RapierContext>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    for (transform, mut player, mut jump) in q_player.iter_mut() {
+    for (transform, mut player, mut jump, mut gravity_dir) in q_player.iter_mut() {
         if player.grabbed_ceiling {
             continue;
         }
@@ -17,6 +17,7 @@ pub fn stretching_controls(
             continue;
         }
 
+        gravity_dir.slow_down = 1.0;
         if keyboard_input.pressed(KeyCode::Space) {
 
             if player.stretch >= PLAYER_MAXIMUM_STRETCH {
@@ -60,6 +61,7 @@ pub fn stretching_controls(
             }
 
             player.stretch += PLAYER_STRETCH_SPEED;
+            gravity_dir.slow_down = -0.2;
             continue;
         }
 
@@ -83,14 +85,15 @@ pub fn ungrab_ceiling(
 }
 
 pub fn grab_ceiling(
-    mut q_player: Query<(&mut Player, &mut GravityDir)>,
+    mut q_player: Query<(&mut Player, &mut GravityDir, &mut Velocity)>,
 ) {
-    for (mut player, mut gravity_dir) in q_player.iter_mut() {
+    for (mut player, mut gravity_dir, mut velocity) in q_player.iter_mut() {
         if player.grabbed_ceiling {
-            gravity_dir.dir = -1;
-            player.stretch -= 1.0;
+            gravity_dir.dir = -7.9;
+            player.stretch -= (PLAYER_STRETCH_SPEED * 1.0);
+            velocity.current.y = 0.0;
         } else {
-            gravity_dir.dir = 1;
+            gravity_dir.dir = 1.0;
         }
 
         if player.stretch <= 0.0 {

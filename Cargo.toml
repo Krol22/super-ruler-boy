@@ -13,6 +13,8 @@ kt_util.workspace = true
 bevy.workspace = true
 bevy_rapier2d.workspace = true
 bevy-parallax.workspace = true
+bevy_framepace.workspace = true
+bevy_tweening.workspace = true
 bevy_ecs_ldtk = { workspace = true, features = ["atlas"] }
 
 [workspace]
@@ -41,3 +43,4 @@ lyon = "1.0.1"
 bevy_ecs_ldtk = "0.8.0"
 bevy_xpbd_2d = "0.2"
 bevy-parallax = "0.6.1"
+bevy_framepace = "0.13.4"

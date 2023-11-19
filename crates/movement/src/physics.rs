@@ -4,11 +4,10 @@ use kt_common::components::{velocity::Velocity, acceleration::Acceleration, grav
 
 pub fn apply_velocity_to_kinematic_controller(
     mut q_kinematic_controller: Query<(&mut KinematicCharacterController, &mut Velocity, &mut Acceleration, &GravityDir)>,
-    time: Res<Time>,
 ) {
     for (mut kcc, mut velocity, mut acceleration, gravity_dir) in q_kinematic_controller.iter_mut() {
         // Apply gravity
-        velocity.current += Vec2::new(0.0, -0.6 * gravity_dir.dir as f32);
+        velocity.current += Vec2::new(0.0, -15.0 * gravity_dir.dir * gravity_dir.slow_down);
 
         // Movement
         velocity.current += Vec2::new(
@@ -17,12 +16,18 @@ pub fn apply_velocity_to_kinematic_controller(
         );
 
         velocity.current = velocity.current.clamp(-velocity.max, velocity.max);
-        kcc.translation = Some(velocity.current);
+        // dbg!(time.delta_seconds());
+        kcc.translation = Some(
+            Vec2::new(
+                velocity.current.x * (1.0 / 60.0),
+                velocity.current.y * (1.0 / 60.0),
+            )
+        );
 
         // Damp velocity
         velocity.current.x *= 1.0 - velocity.damping;
 
-        if velocity.current.x.abs() < 0.01 {
+        if velocity.current.x.abs() < 0.1 {
             velocity.current.x = 0.0;
         }
 
