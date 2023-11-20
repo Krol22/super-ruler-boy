@@ -92,7 +92,7 @@ pub fn horizontal_controls_on_ceiling (
         if let Some(_entity) = rapier_context.cast_ray(
             ray_pos, ray_dir, max_toi, solid, filter
         ) {
-            velocity.current.x = -10.0;
+            velocity.current.x = -100.0;
         }
 
         return;
@@ -111,7 +111,7 @@ pub fn horizontal_controls_on_ceiling (
         if let Some(_entity) = rapier_context.cast_ray(
             ray_pos, ray_dir, max_toi, solid, filter
         ) {
-            velocity.current.x = 10.0;
+            velocity.current.x = 100.0;
         }
     }
 }

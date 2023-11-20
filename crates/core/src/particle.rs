@@ -81,11 +81,15 @@ fn emitter_sys (
             continue;
         }
 
+        if emitter.spawn_timer.mode() == TimerMode::Once {
+            emitter.spawning = false;
+        }
+
         commands.spawn((
             SpriteSheetBundle {
                 texture_atlas: emitter.handle.clone(),
                 sprite: TextureAtlasSprite::new(emitter.frames[0]),
-                transform: Transform::from_xyz(transform.translation.x, transform.translation.y, 0.0),
+                transform: Transform::from_xyz(transform.translation.x, transform.translation.y, transform.translation.z),
                 ..default()
             },
             Particle {

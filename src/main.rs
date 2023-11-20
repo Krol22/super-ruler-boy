@@ -7,8 +7,8 @@ use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, In
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength}};
 use bevy_tweening::{Tween, EaseFunction, lens::TransformScaleLens};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint}};
-use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter}};
+use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
 use bevy_parallax::{ParallaxPlugin, ParallaxMoveEvent};
@@ -67,10 +67,23 @@ fn main() {
     update_level_dimensions,
     follow_player_with_camera,
     elevator_handle,
+    sync_emitter_position,
 ).chain())
     .edit_schedule(Update, |schedule| {
         schedule.set_executor_kind(ExecutorKind::SingleThreaded);
     }).run();
+}
+
+fn sync_emitter_position(
+    q_player: Query<&Transform, (With<Player>, Without<DustParticleEmitter>)>,
+    mut q_particle_emitter: Query<&mut Transform, With<DustParticleEmitter>>,
+) {
+    for transform in q_player.iter() {
+        for mut emitter_transform in q_particle_emitter.iter_mut() {
+            emitter_transform.translation.x = transform.translation.x;
+            emitter_transform.translation.y = transform.translation.y + 3.0;
+        }
+    }
 }
 
 fn restart_player_pos(
@@ -860,6 +873,7 @@ fn spawn_player(
         SpatialBundle::from_transform(Transform::from_xyz(50.0, 200.0, 0.0)),
         RigidBody::KinematicVelocityBased,
         Collider::cuboid(6.0, 9.0),
+        GroundDetector::default(),
         GravityDir {
             dir: 0.0,
             slow_down: 1.0,
@@ -1036,6 +1050,30 @@ fn spawn_player(
 
     commands.entity(player)
         .add_child(player_limbs);
+
+    let dust_handle = asset_server.load("sprites/dust-sheet-copy.png");
+    let dust_texture_atlas = TextureAtlas::from_grid(
+        dust_handle,
+        Vec2::new(24.0, 24.0),
+        4,
+        1,
+        None,
+        None,
+    );
+
+    let dust_texture_atlas = texture_atlases.add(dust_texture_atlas);
+
+    commands.spawn((
+        Transform::from_xyz(0.0, 0.0, 2.0),
+        ParticleEmitter {
+            frames: vec![0, 1, 2, 3],
+            particle_lifetime: 0.4,
+            handle: dust_texture_atlas,
+            spawning: false,
+            spawn_timer: Timer::from_seconds(0.4, TimerMode::Once),
+        },
+        DustParticleEmitter {},
+    ));
 
     // commands.spawn((
         // RigidBody::Fixed,

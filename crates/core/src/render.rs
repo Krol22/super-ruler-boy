@@ -11,7 +11,7 @@ impl Plugin for RenderPlugin {
 }
 
 // Crispy pixel art :chef-kiss:
-// I should probably build some solution that will work differently for different textures
+// I should probably build some solution that will work differently for different textures/
 pub fn set_sprites_filter_mode(
     mut ev_asset: EventReader<AssetEvent<Image>>,
     mut assets: ResMut<Assets<Image>>,
@@ -20,8 +20,8 @@ pub fn set_sprites_filter_mode(
         if let AssetEvent::Created { handle } = ev {
             if let Some(texture) = assets.get_mut(handle) {
                 let sampler_descriptor = SamplerDescriptor {
-                    address_mode_u: AddressMode::Repeat,
-                    address_mode_v: AddressMode::Repeat,
+                    address_mode_u: AddressMode::ClampToEdge,
+                    address_mode_v: AddressMode::ClampToEdge,
                     ..default()
                 };
                 let image_sampler = ImageSampler::Descriptor(sampler_descriptor);
