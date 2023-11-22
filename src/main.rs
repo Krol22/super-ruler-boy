@@ -6,8 +6,8 @@ use bevy::prelude::PluginGroup;
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt, LdtkFields}, LdtkEntity, EntityInstance, SetClearColor, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength}};
-use bevy_tweening::{Tween, EaseFunction, lens::TransformScaleLens};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter}};
+use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, platform::Platform}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
@@ -49,10 +49,12 @@ fn main() {
         .register_ldtk_entity::<SpawnPointBundle>("SpawnPoint")
         .register_ldtk_entity::<CheckpointBundle>("Checkpoint")
         .register_ldtk_entity::<ElevatorBundle>("Elevator")
+        .register_ldtk_entity::<PlatformBundle>("Platform")
         .add_systems(Update, toggle_vsync)
         .add_systems(Update, setup_walls)
         .add_systems(Update, process_spawn_point)
         .add_systems(Update, process_elevator)
+        .add_systems(Update, process_platform)
         .add_systems(Update, (
     restart_player_pos,
     handle_animation,
@@ -139,6 +141,60 @@ fn elevator_handle(
                 elevator.direction.y = -elevator.direction.y
             }
         }
+
+    }
+}
+
+fn process_platform(
+    q_entity: Query<(&Transform, Entity), Added<PlatformInstance>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let texture_handle = asset_server.load("sprites/platform.png");
+
+    for (transform, entity) in q_entity.iter() {
+        commands
+            .entity(entity)
+            .despawn();
+
+        let tween = Tween::new(
+            EaseFunction::BounceOut,
+            Duration::from_secs_f32(0.0),
+            TransformPositionLens {
+                start: Vec3::ONE,
+                end: Vec3::ONE,
+            },
+        );
+
+        let platform = commands.spawn((
+            SpatialBundle::from_transform(Transform::from_xyz(
+                transform.translation.x,
+                transform.translation.y,
+                0.0,
+            )),
+            GravityScale(0.0),
+            Collider::cuboid(12.0, 5.5),
+            RigidBody::KinematicPositionBased,
+            Platform {
+                initial_pos: Vec3::new(transform.translation.x, transform.translation.y, 0.0),
+                ..default()
+            },
+            bevy_tweening::Animator::new(tween),
+        )).id();
+
+        let platform_texture = commands.spawn(
+            SpriteBundle {
+                transform: Transform::from_xyz(
+                    0.0,
+                    6.0,
+                    0.0,
+                ),
+                texture: texture_handle.clone(),
+                ..default()
+            },
+        ).id();
+
+        commands.entity(platform).add_child(platform_texture);
 
     }
 }
@@ -243,7 +299,7 @@ pub fn follow_player_with_camera(
         return
     };
 
-    let (mut camera, entity) = if let Ok(camera) = q_camera.get_single_mut() {
+    let (camera, entity) = if let Ok(camera) = q_camera.get_single_mut() {
         camera
     } else {
         return
@@ -305,14 +361,6 @@ pub fn follow_player_with_camera(
 
     speed.x = new_pos_x - camera.translation.x;
     speed.y = new_pos_y - camera.translation.y;
-
-    // dbg!(
-        // camera.translation.x - new_pos_x,
-        // camera.translation.y - new_pos_y,
-    // );
-
-    // camera.translation.x = new_pos_x;
-    // camera.translation.y = new_pos_y;
 
     move_event_writer.send(ParallaxMoveEvent {
         camera_move_speed: speed,
@@ -567,6 +615,14 @@ pub struct ElevatorBundle {
     pub level: Level,
     pub elevator: ElevatorInstance,
 }
+
+#[derive(Default, Bundle, LdtkEntity)]
+pub struct PlatformBundle {
+    pub platform_instance: PlatformInstance,
+}
+
+#[derive(Default, Component, Clone, Debug)]
+pub struct PlatformInstance {}
 
 #[derive(Clone, Component, Debug, Default)]
 pub struct SpawnPoint {}

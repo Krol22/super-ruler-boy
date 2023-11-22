@@ -1,6 +1,9 @@
-use bevy::{prelude::{Query, Res, Vec2, With}, time::{Time, TimerMode, Timer}};
-use bevy_rapier2d::prelude::{KinematicCharacterController, KinematicCharacterControllerOutput};
-use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir, jump::Jump, ground_detector::{GroundDetector, self}, dust_particle_emitter::DustParticleEmitter};
+use std::time::Duration;
+
+use bevy::{prelude::{Query, Res, Vec2, With, Transform, Vec3}, time::{Time, TimerMode, Timer}};
+use bevy_rapier2d::prelude::{KinematicCharacterController, KinematicCharacterControllerOutput, GravityScale};
+use bevy_tweening::{EaseFunction, lens::TransformPositionLens, Tween};
+use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir, jump::Jump, ground_detector::{GroundDetector, self}, dust_particle_emitter::DustParticleEmitter, platform::Platform};
 use kt_core::particle::ParticleEmitter;
 
 pub fn apply_velocity_to_kinematic_controller(
@@ -49,6 +52,85 @@ pub fn clear_velocity_if_kinematic_on_ground(
         ground_detector.is_on_ground.update_value(kcco.grounded);
         if !ground_detector.is_on_ground.is_same_as_previous() {
             ground_detector.hit_speed = original;
+        }
+    }
+}
+
+pub fn activate_platforms(
+    q_kinematic: Query<&KinematicCharacterControllerOutput>,
+    mut q_platforms: Query<(&mut Platform, &Transform, &mut bevy_tweening::Animator<Transform>)>,
+) {
+    for kcco in q_kinematic.iter() {
+        for collision in kcco.collisions.iter() {
+            let platform = q_platforms.get_mut(collision.entity);
+
+            if platform.is_err() {
+                continue;
+            }
+
+            let (mut platform, transform, mut animator) = platform.unwrap();
+
+            if platform.is_stepped_on {
+                continue;
+            }
+
+            let tween = Tween::new(
+                EaseFunction::BounceInOut,
+                Duration::from_secs_f32(0.5),
+                TransformPositionLens {
+                    start: Vec3::new(transform.translation.x, transform.translation.y, transform.translation.z),
+                    end: Vec3::new(transform.translation.x, transform.translation.y - 5.0, transform.translation.z),
+                }
+            );
+
+            animator.set_tweenable(tween);
+
+            platform.is_stepped_on = true;
+            platform.drop_timer = Timer::from_seconds(1.0, TimerMode::Once);
+        }
+    } 
+}
+
+pub fn handle_platform_dropping(
+    mut q_platforms: Query<(&mut Platform, &mut Transform)>,
+    time: Res<Time>,
+) {
+    for (mut platform, mut transform) in q_platforms.iter_mut() {
+        platform.drop_timer.tick(time.delta());
+
+        if platform.drop_timer.finished() && platform.is_stepped_on {
+            transform.translation.y -= 3.0;
+        }
+    }
+}
+
+pub fn handle_platform_off_screen(
+    mut q_platforms: Query<(&mut Platform, &Transform, &mut bevy_tweening::Animator<Transform>)>,
+    time: Res<Time>,
+) {
+    for (mut platform, transform, mut animator) in q_platforms.iter_mut() {
+        if transform.translation.y > -30.0 {
+            continue;
+        }
+
+        if platform.is_stepped_on {
+            platform.restart_timer = Timer::from_seconds(2.5, TimerMode::Once);
+        }
+
+        platform.is_stepped_on = false;
+        platform.restart_timer.tick(time.delta());
+
+        if platform.restart_timer.just_finished() {
+            let tween = Tween::new(
+                EaseFunction::QuarticInOut,
+                Duration::from_secs_f32(1.5),
+                TransformPositionLens {
+                    start: Vec3::new(transform.translation.x, transform.translation.y, transform.translation.z),
+                    end: Vec3::new(platform.initial_pos.x, platform.initial_pos.y, platform.initial_pos.z),
+                }
+            );
+
+            animator.set_tweenable(tween);
         }
     }
 }

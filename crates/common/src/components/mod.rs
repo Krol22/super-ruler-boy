@@ -4,6 +4,7 @@ pub mod dust_particle_emitter;
 pub mod limb;
 pub mod ground_detector;
 pub mod player;
+pub mod platform;
 pub mod jump;
 pub mod stretch;
 pub mod velocity;

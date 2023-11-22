@@ -1,7 +1,7 @@
 use bevy::prelude::{Plugin, App, Update, IntoSystemConfigs};
 use horizontal::{horizontal_controls, horizontal_controls_on_ceiling};
 use jumping::{jumping_controls, update_can_jump_flag, bounce_off_ceiling};
-use physics::{apply_velocity_to_kinematic_controller, clear_velocity_if_kinematic_on_ground, hit_ground};
+use physics::{apply_velocity_to_kinematic_controller, clear_velocity_if_kinematic_on_ground, hit_ground, activate_platforms, handle_platform_dropping, handle_platform_off_screen};
 use stretching::{stretching_controls, grab_ceiling, ungrab_ceiling};
 
 mod jumping;
@@ -26,6 +26,9 @@ impl Plugin for MovementPlugin {
             apply_velocity_to_kinematic_controller,
             clear_velocity_if_kinematic_on_ground,
             hit_ground,
+            activate_platforms,
+            handle_platform_dropping,
+            handle_platform_off_screen,
         ).chain());
     }
 }
