@@ -1,17 +1,17 @@
 use std::time::Duration;
 
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource, Added, ImagePlugin}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode, WindowMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind, diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}, reflect::Reflect};
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource, Added, ImagePlugin, Color}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode, WindowMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind, diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}, reflect::Reflect, };
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt, LdtkFields}, LdtkEntity, EntityInstance, SetClearColor, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
-use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength}};
-use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens}};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, platform::Platform}};
+use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength, KinematicCharacterControllerOutput}};
+use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens}, RepeatCount, EaseMethod, TweeningDirection};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, platform::Platform, pin::{Pin, PinState}, interaction::Interaction}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
-use bevy_parallax::{ParallaxPlugin, ParallaxMoveEvent};
+use bevy_parallax::{ParallaxPlugin, ParallaxMoveEvent, RepeatStrategy};
 
 fn main() {
     App::new()
@@ -50,12 +50,16 @@ fn main() {
         .register_ldtk_entity::<CheckpointBundle>("Checkpoint")
         .register_ldtk_entity::<ElevatorBundle>("Elevator")
         .register_ldtk_entity::<PlatformBundle>("Platform")
-        .add_systems(Update, toggle_vsync)
+        .register_ldtk_entity::<PinBundle>("Pin")
         .add_systems(Update, setup_walls)
         .add_systems(Update, process_spawn_point)
         .add_systems(Update, process_elevator)
         .add_systems(Update, process_platform)
+        .add_systems(Update, process_pin)
+        .add_systems(Update, pickup_pin)
         .add_systems(Update, (
+    reset_overlaps,
+    handle_player_interaction,
     restart_player_pos,
     handle_animation,
     animator_sys,
@@ -70,6 +74,7 @@ fn main() {
     follow_player_with_camera,
     elevator_handle,
     sync_emitter_position,
+    handle_pin,
 ).chain())
     .edit_schedule(Update, |schedule| {
         schedule.set_executor_kind(ExecutorKind::SingleThreaded);
@@ -233,6 +238,108 @@ fn process_elevator(
     }
 }
 
+fn process_pin(
+    q_entity: Query<(&Transform, Entity), Added<PinInstance>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let texture_handle = asset_server.load("sprites/pin.png");
+
+    for (transform, entity) in q_entity.iter() {
+        commands
+            .entity(entity)
+            .despawn();
+
+        let tween = Tween::new(
+            EaseFunction::SineInOut,
+            Duration::from_secs_f32(2.0),
+            TransformPositionLens {
+                start: Vec3::new(transform.translation.x, transform.translation.y, 0.0),
+                end: Vec3::new(transform.translation.x, transform.translation.y + 6.0, 0.0),
+            }
+        )
+            .with_repeat_count(RepeatCount::Infinite)
+            .with_repeat_strategy(bevy_tweening::RepeatStrategy::MirroredRepeat);
+
+        let opacity_tween = Tween::new(
+            EaseFunction::SineInOut,
+            Duration::from_secs_f32(0.0),
+            SpriteColorLens {
+                start: Color::WHITE,
+                end: Color::WHITE,
+            }
+        );
+
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_xyz(
+                    transform.translation.x,
+                    transform.translation.y,
+                    0.0,
+                ),
+                texture: texture_handle.clone(),
+                ..default()
+            },
+            Collider::cuboid(4.5, 4.5),
+            Sensor,
+            Interaction::default(),
+            Pin {
+                initial_position: Vec2::new(transform.translation.x, transform.translation.y),
+                ..default()
+            },
+            bevy_tweening::Animator::new(tween),
+            bevy_tweening::Animator::new(opacity_tween),
+        ));
+    }
+}
+
+fn handle_pin(
+    mut q_pin: Query<(
+        &mut Pin,
+        &Transform,
+        &mut bevy_tweening::Animator<Transform>,
+        &mut bevy_tweening::Animator<Sprite>,
+    )>,
+) {
+    for (mut pin, transform, mut transform_animator, mut sprite_animator) in q_pin.iter_mut() {
+        if !pin.picked && matches!(pin.state.current, PinState::Picked) && !pin.state.is_same_as_previous() {
+
+            let tween_up = Tween::new(
+                EaseFunction::SineInOut,
+                Duration::from_secs_f64(0.3),
+                TransformPositionLens {
+                    start: Vec3::new(transform.translation.x, transform.translation.y, 0.0),
+                    end: Vec3::new(transform.translation.x, transform.translation.y + 24.0, 0.0),
+                }
+            );
+
+            let opacity = Tween::new(
+                EaseFunction::QuadraticInOut,
+                Duration::from_secs_f64(0.3),
+                SpriteColorLens {
+                    start: Color::Rgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 },
+                    end: Color::Rgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 0.0 },
+                }
+            );
+
+            transform_animator.set_tweenable(tween_up);
+            sprite_animator.set_tweenable(opacity);
+
+            pin.picked = true;
+        }
+    }
+}
+
+fn pickup_pin(
+    mut q_pins: Query<(&mut Pin, &Interaction)>,
+) {
+    for (mut pin, interaction) in q_pins.iter_mut() {
+        if interaction.is_overlapping && !pin.picked {
+            pin.state.update_value(PinState::Picked);
+        }
+    }
+}
+
 fn process_spawn_point(
     q_entity: Query<&Transform, Added<SpawnPoint>>,
     mut q_player: Query<&mut Transform, (With<Player>, Without<SpawnPoint>)>,
@@ -248,19 +355,6 @@ fn process_spawn_point(
 
         player_transform.translation.x = transform.translation.x;
         player_transform.translation.y = transform.translation.y;
-    }
-}
-
-fn toggle_vsync(input: Res<Input<KeyCode>>, mut windows: Query<&mut Window>) {
-    if input.just_pressed(KeyCode::V) {
-        let mut window = windows.single_mut();
-
-        window.present_mode = if matches!(window.present_mode, PresentMode::AutoVsync) {
-            PresentMode::AutoNoVsync
-        } else {
-            PresentMode::AutoVsync
-        };
-        dbg!("PRESENT_MODE: {:?}", window.present_mode);
     }
 }
 
@@ -453,6 +547,48 @@ fn respawn_player(
 
 }
 
+fn handle_player_interaction (
+    q_player: Query<(&mut Transform, &Velocity), With<Player>>,
+    mut q_interaction: Query<&mut Interaction>,
+    rapier_context: Res<RapierContext>,
+    time: Res<Time>,
+) {
+    for (transform, velocity) in q_player.iter() {
+        let shape = Collider::cuboid(6.0, 9.0);
+        let shape_pos = transform.translation.truncate();
+        let shape_vel = Vec2::new(
+            velocity.current.x * time.delta_seconds(),
+            velocity.current.y * time.delta_seconds(),
+        );
+        let shape_rot = 0.0;
+        let max_toi = 1.0;
+
+        let filter = QueryFilter {
+            flags: QueryFilterFlags::EXCLUDE_SOLIDS,
+            ..default()
+        };
+
+        if let Some((entity, _hit)) = rapier_context.cast_shape(
+            shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
+        ) {
+            let interaction = q_interaction.get_mut(entity);
+            if let Ok(mut interaction) = interaction {
+                interaction.is_overlapping = true;
+            }
+
+            continue
+        }
+    }
+}
+
+fn reset_overlaps (
+    mut q_interaction: Query<&mut Interaction>,
+) {
+    for mut interaction in q_interaction.iter_mut() {
+        interaction.is_overlapping = false;
+    }
+}
+
 fn handle_player_hurt_collision(
     mut q_player: Query<(&mut Transform, &Velocity, &mut Player)>,
     q_hit: Query<&HitComponent>,
@@ -623,6 +759,14 @@ pub struct PlatformBundle {
 
 #[derive(Default, Component, Clone, Debug)]
 pub struct PlatformInstance {}
+
+#[derive(Default, Bundle, LdtkEntity)]
+pub struct PinBundle {
+    pub pin_instance: PinInstance,
+}
+
+#[derive(Default, Component, Clone, Debug)]
+pub struct PinInstance {}
 
 #[derive(Clone, Component, Debug, Default)]
 pub struct SpawnPoint {}

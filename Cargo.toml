@@ -14,7 +14,7 @@ bevy.workspace = true
 bevy_rapier2d.workspace = true
 bevy-parallax.workspace = true
 bevy_framepace.workspace = true
-bevy_tweening.workspace = true
+bevy_tweening.workspace = { workspace = true, features = ["all"] }
 bevy_ecs_ldtk = { workspace = true, features = ["atlas"] }
 
 [workspace]
