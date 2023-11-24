@@ -9,5 +9,6 @@ pub mod platform;
 pub mod jump;
 pub mod pin;
 pub mod stretch;
+pub mod sharpener;
 pub mod velocity;
 pub mod gravity;

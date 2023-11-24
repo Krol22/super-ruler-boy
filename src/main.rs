@@ -7,7 +7,7 @@ use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, In
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength, KinematicCharacterControllerOutput}};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens}, RepeatCount, EaseMethod, TweeningDirection};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, platform::Platform, pin::{Pin, PinState}, interaction::Interaction}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, platform::Platform, pin::{Pin, PinState}, interaction::Interaction, sharpener::Sharpener}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
@@ -51,11 +51,13 @@ fn main() {
         .register_ldtk_entity::<ElevatorBundle>("Elevator")
         .register_ldtk_entity::<PlatformBundle>("Platform")
         .register_ldtk_entity::<PinBundle>("Pin")
+        .register_ldtk_entity::<SharpenerBundle>("Sharpener")
         .add_systems(Update, setup_walls)
         .add_systems(Update, process_spawn_point)
         .add_systems(Update, process_elevator)
         .add_systems(Update, process_platform)
         .add_systems(Update, process_pin)
+        .add_systems(Update, process_sharpener)
         .add_systems(Update, pickup_pin)
         .add_systems(Update, (
     reset_overlaps,
@@ -75,6 +77,7 @@ fn main() {
     elevator_handle,
     sync_emitter_position,
     handle_pin,
+    load_next_level,
 ).chain())
     .edit_schedule(Update, |schedule| {
         schedule.set_executor_kind(ExecutorKind::SingleThreaded);
@@ -90,6 +93,23 @@ fn sync_emitter_position(
             emitter_transform.translation.x = transform.translation.x;
             emitter_transform.translation.y = transform.translation.y + 3.0;
         }
+    }
+}
+
+fn load_next_level(
+    input: Res<Input<KeyCode>>,
+    mut level_selection: ResMut<LevelSelection>,
+    mut commands: Commands,
+    q_despawnable: Query<Entity, With<Despawnable>>
+) {
+    if !input.just_pressed(KeyCode::N) {
+        return;
+    }
+
+    *level_selection = LevelSelection::Index(1);
+
+    for wall_entity in q_despawnable.iter() {
+        commands.entity(wall_entity).despawn();
     }
 }
 
@@ -184,6 +204,7 @@ fn process_platform(
                 initial_pos: Vec3::new(transform.translation.x, transform.translation.y, 0.0),
                 ..default()
             },
+            Despawnable {},
             bevy_tweening::Animator::new(tween),
         )).id();
 
@@ -229,11 +250,57 @@ fn process_elevator(
             GravityScale(0.0),
             Collider::cuboid(16.0, 5.5),
             RigidBody::KinematicPositionBased,
+            Despawnable {},
             Elevator {
                 direction: Vec2::new(0.0, 0.3),
                 initial_position: transform.translation.truncate(),
             },
             level.clone(),
+        ));
+    }
+}
+
+fn process_sharpener(
+    q_entity: Query<(&Transform, &PointTo, Entity), Added<SharpenerInstance>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let texture_handle = asset_server.load("sprites/pin.png");
+
+    for (transform, point_to, entity) in q_entity.iter() {
+        commands
+            .entity(entity)
+            .despawn();
+        
+        dbg!(transform.translation, point_to);
+
+        let tween = Tween::new(
+            EaseFunction::SineInOut,
+            Duration::from_secs_f32(3.0),
+            TransformPositionLens {
+                start: Vec3::new(transform.translation.x, transform.translation.y, 0.0),
+                end: Vec3::new(point_to.x as f32, transform.translation.y, 0.0),
+            }
+        )
+            .with_repeat_count(RepeatCount::Infinite)
+            .with_repeat_strategy(bevy_tweening::RepeatStrategy::MirroredRepeat);
+
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_xyz(
+                    transform.translation.x,
+                    transform.translation.y,
+                    0.0,
+                ),
+                texture: texture_handle.clone(),
+                ..default()
+            },
+            Collider::cuboid(4.5, 4.5),
+            Sensor,
+            Despawnable {},
+            Sharpener {},
+            Interaction::default(),
+            bevy_tweening::Animator::new(tween),
         ));
     }
 }
@@ -283,6 +350,7 @@ fn process_pin(
             Collider::cuboid(4.5, 4.5),
             Sensor,
             Interaction::default(),
+            Despawnable {},
             Pin {
                 initial_position: Vec2::new(transform.translation.x, transform.translation.y),
                 ..default()
@@ -662,6 +730,7 @@ fn setup_walls(
             )),
             RigidBody::Fixed,
             Collider::cuboid(12.0 * rect.width as f32, 12.0),
+            Despawnable {},
         ));
     }
 }
@@ -731,6 +800,9 @@ pub struct CheckpointBundle {
 #[derive(Clone, Component, Debug, Default)]
 pub struct HitComponent {}
 
+#[derive(Clone, Component, Debug, Default)]
+pub struct Despawnable {}
+
 #[derive(Default, Bundle, LdtkEntity)]
 pub struct SpikesBundle {
     #[from_entity_instance]
@@ -768,6 +840,16 @@ pub struct PinBundle {
 #[derive(Default, Component, Clone, Debug)]
 pub struct PinInstance {}
 
+#[derive(Default, Bundle, LdtkEntity)]
+pub struct SharpenerBundle {
+    #[with(PointTo::from_field)]
+    pub point_to: PointTo,
+    pub sharpener_instance: SharpenerInstance,
+}
+
+#[derive(Default, Component, Clone, Debug)]
+pub struct SharpenerInstance {}
+
 #[derive(Clone, Component, Debug, Default)]
 pub struct SpawnPoint {}
 
@@ -782,6 +864,26 @@ impl Level {
         Level(*entity_instance
             .get_int_field("level")
             .expect("expected entity to have non-nullable level string field"))
+    }
+}
+
+#[derive(Clone, Component, Debug, Default, Reflect, PartialEq, PartialOrd)]
+pub struct PointTo {
+    x: i32,
+    y: i32,
+}
+
+
+impl PointTo {
+    pub fn from_field(entity_instance: &EntityInstance) -> PointTo {
+        let point_field = *entity_instance
+            .get_point_field("point_to")
+            .expect("expeced entity to have non-nullable point_to point field");
+
+        PointTo {
+            x: point_field.x,
+            y: point_field.y,
+        }
     }
 }
 
