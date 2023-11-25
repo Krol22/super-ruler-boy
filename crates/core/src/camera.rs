@@ -7,7 +7,7 @@ use kt_util::constants::{ASPECT_RATIO_X, ASPECT_RATIO_Y};
 
 fn spawn_camera(
     mut commands: Commands,
-    mut create_parallax: EventWriter<CreateParallaxEvent>,
+    // mut create_parallax: EventWriter<CreateParallaxEvent>,
 ) {
     let tween = Tween::new(
         EaseFunction::BounceOut,
@@ -35,22 +35,22 @@ fn spawn_camera(
         // Animator::new(tween)
     )).id();
 
-    create_parallax.send(CreateParallaxEvent {
-        layers_data: vec![
-            LayerData {
-                speed: LayerSpeed::Bidirectional(0.2, 0.1),
-                repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
-                path: "sprites/background.png".to_string(),
-                tile_size: Vec2::new(622.0, 317.0),
-                cols: 1,
-                rows: 1,
-                scale: 1.2,
-                z: -1.0,
-                ..default()
-            },
-        ],
-        camera,
-    })
+    // create_parallax.send(CreateParallaxEvent {
+        // layers_data: vec![
+            // LayerData {
+                // speed: LayerSpeed::Bidirectional(0.2, 0.1),
+                // repeat: LayerRepeat::horizontally(RepeatStrategy::Same),
+                // path: "sprites/background.png".to_string(),
+                // tile_size: Vec2::new(622.0, 317.0),
+                // cols: 1,
+                // rows: 1,
+                // scale: 1.2,
+                // z: -1.0,
+                // ..default()
+            // },
+        // ],
+        // camera,
+    // })
 }
 
 pub fn auto_scale_sys(
@@ -71,7 +71,7 @@ pub struct CameraPlugin {}
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)))
+            .insert_resource(ClearColor(Color::rgb(0.2, 0.2, 0.2)))
             .add_systems(Startup, spawn_camera)
             .add_systems(Update, auto_scale_sys);
     }

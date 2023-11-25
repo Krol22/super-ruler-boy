@@ -1,21 +1,33 @@
 use std::time::Duration;
 
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource, Added, ImagePlugin, Color}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode, WindowMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind, diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}, reflect::Reflect, };
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Component, Without, Bundle, Entity, Camera, EventWriter, Resource, Added, ImagePlugin, Color, States, in_state, NextState, OnEnter, NodeBundle, TextBundle, ButtonBundle, Changed, Button, ChildBuilder, EventReader}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode, WindowMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, transform::TransformBundle, time::{Time, Timer, TimerMode}, ecs::schedule::ExecutorKind, diagnostic::{LogDiagnosticsPlugin, FrameTimeDiagnosticsPlugin}, reflect::Reflect, ui::{Style, Val, AlignItems, JustifyContent, UiRect, BorderColor, BackgroundColor, FlexDirection, UiImage, Display, GridTrack, GridTrackRepetition, RepeatedGridTrack, PositionType, ZIndex}, text::{TextStyle, Text}, };
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, LdtkIntCell, IntGridCell, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt, LdtkFields}, LdtkEntity, EntityInstance, SetClearColor, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::{prelude::{RigidBody, Collider, KinematicCharacterController, Sensor, QueryFilterFlags, RapierContext, QueryFilter, GravityScale, CharacterLength, KinematicCharacterControllerOutput}};
-use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens}, RepeatCount, EaseMethod, TweeningDirection};
+use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}, RepeatCount, EaseMethod, TweeningDirection, TweenCompleted, Delay};
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, platform::Platform, pin::{Pin, PinState}, interaction::Interaction, sharpener::Sharpener}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
-use bevy_parallax::{ParallaxPlugin, ParallaxMoveEvent, RepeatStrategy};
+
+#[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
+enum AppState {
+    #[default]
+    MainMenu,
+    InGame,
+}
+
+#[derive(Resource, Default, Debug, Clone)]
+pub struct GameState {
+    pub level: isize,
+}
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+    let mut app = App::new();
+
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
               title: WINDOW_TITLE.to_string(),
               resizable: false,
@@ -25,19 +37,24 @@ fn main() {
             }),
             ..default()
         }).set(ImagePlugin::default_nearest()))
-        .add_plugins(LogDiagnosticsPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin)
         .add_plugins(FramepacePlugin)
-        .insert_resource(FramepaceSettings {
-            limiter: Limiter::from_framerate(60.0)
-        })
         .add_plugins(LdtkPlugin)
         .add_plugins(CommonPlugin {})
         .add_plugins(CorePlugin {})
         .add_plugins(MovementPlugin {})
-        .add_plugins(ParallaxPlugin {})
-        .add_systems(Startup, setup)
-        .add_systems(Startup, spawn_player)
+        // .add_plugins(ParallaxPlugin {})
+        .insert_resource(FramepaceSettings {
+            limiter: Limiter::from_framerate(60.0)
+        })
+        .edit_schedule(Update, |schedule| {
+            schedule.set_executor_kind(ExecutorKind::SingleThreaded);
+        });
+
+    app
+        .add_state::<AppState>();
+
+    app
         .insert_resource(LevelSelection::Index(0))
         .insert_resource(LevelDimensions::default())
         .insert_resource(LdtkSettings {
@@ -51,15 +68,35 @@ fn main() {
         .register_ldtk_entity::<ElevatorBundle>("Elevator")
         .register_ldtk_entity::<PlatformBundle>("Platform")
         .register_ldtk_entity::<PinBundle>("Pin")
-        .register_ldtk_entity::<SharpenerBundle>("Sharpener")
-        .add_systems(Update, setup_walls)
-        .add_systems(Update, process_spawn_point)
-        .add_systems(Update, process_elevator)
-        .add_systems(Update, process_platform)
-        .add_systems(Update, process_pin)
-        .add_systems(Update, process_sharpener)
-        .add_systems(Update, pickup_pin)
+        .register_ldtk_entity::<SharpenerBundle>("Sharpener");
+
+/*
+   MENU STATE
+*/
+    app
+        .add_systems(OnEnter(AppState::MainMenu), setup_menu)
+        .add_systems(Update, handle_play_button_interactions.run_if(in_state(AppState::MainMenu)))
+        .add_systems(Update, handle_level_button_interactions.run_if(in_state(AppState::MainMenu)))
+        .add_systems(Update, handle_back_button_interactions.run_if(in_state(AppState::MainMenu)))
+        .add_systems(Update, complete_transition_event_handler.run_if(in_state(AppState::MainMenu)));
+        // .add_systems(Update, button_system.run_if(in_state(AppState::MainMenu)));
+
+/*
+    IN GAME STATE
+*/
+    app
+        .add_systems(OnEnter(AppState::InGame), setup)
+        .add_systems(OnEnter(AppState::InGame), spawn_player)
+        .add_systems(Startup, setup_transition_ui)
+        .add_systems(Update, setup_walls.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_spawn_point.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_elevator.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_platform.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_pin.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_sharpener.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, pickup_pin.run_if(in_state(AppState::InGame)))
         .add_systems(Update, (
+    setup_walls,
     reset_overlaps,
     handle_player_interaction,
     restart_player_pos,
@@ -78,10 +115,521 @@ fn main() {
     sync_emitter_position,
     handle_pin,
     load_next_level,
-).chain())
-    .edit_schedule(Update, |schedule| {
-        schedule.set_executor_kind(ExecutorKind::SingleThreaded);
-    }).run();
+).chain()
+    .run_if(in_state(AppState::InGame)));
+    
+    app.run();
+}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct PlayButtonUi {}
+
+fn create_play_button(parent: &mut ChildBuilder, asset_server: &Res<AssetServer>) {
+    parent
+        .spawn((
+            ButtonBundle {
+                style: Style {
+                    height: Val::Px(65.0),
+                    width: Val::Px(350.0),
+                    margin: UiRect::all(Val::Px(8.0)),
+                    padding: UiRect::horizontal(Val::Px(6.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::WHITE),
+                image: UiImage::new(asset_server.load("sprites/button.png")),
+                ..default()
+            },
+            PlayButtonUi {}
+        ))
+        .with_children(|parent| {
+            parent.spawn(TextBundle::from_section(
+                "start game",
+                TextStyle {
+                    font: asset_server.load("fonts/ThaleahFat.ttf"),
+                    font_size: 40.0,
+                    color: Color::rgb(1.0, 1.0, 1.0),
+                },
+            ));
+        });
+}
+
+fn handle_play_button_interactions(
+    mut q_interaction: Query<&bevy::ui::Interaction, (Changed<bevy::ui::Interaction>, With<PlayButtonUi>)>,
+    mut q_main_column: Query<&mut Style, (With<MainColumnUi>, Without<LevelSelectColumnUi>)>,
+    mut q_level_select_column: Query<&mut Style, (With<LevelSelectColumnUi>, Without<MainColumnUi>)>,
+) {
+    for interaction in &mut q_interaction {
+        if let bevy::ui::Interaction::Pressed = *interaction {
+            let mut main_column_style = q_main_column.single_mut();
+            let mut level_select_column_style = q_level_select_column.single_mut();
+
+            main_column_style.left = Val::Percent(100.0);
+            level_select_column_style.right = Val::Auto;
+        }
+    }
+}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct BackButtonUi {}
+
+fn create_back_button(parent: &mut ChildBuilder, asset_server: &Res<AssetServer>) {
+    parent
+        .spawn((
+            ButtonBundle {
+                style: Style {
+                    height: Val::Px(65.0),
+                    width: Val::Px(350.0),
+                    margin: UiRect::all(Val::Px(8.0)),
+                    padding: UiRect::horizontal(Val::Px(6.0)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                background_color: BackgroundColor(Color::WHITE),
+                image: UiImage::new(asset_server.load("sprites/button.png")),
+                ..default()
+            },
+            BackButtonUi {}
+        ))
+        .with_children(|parent| {
+            parent.spawn(TextBundle::from_section(
+                "back",
+                TextStyle {
+                    font: asset_server.load("fonts/ThaleahFat.ttf"),
+                    font_size: 40.0,
+                    color: Color::rgb(1.0, 1.0, 1.0),
+                },
+            ));
+        });
+}
+
+fn handle_back_button_interactions(
+    mut q_interaction: Query<&bevy::ui::Interaction, (Changed<bevy::ui::Interaction>, With<BackButtonUi>)>,
+    mut q_main_column: Query<&mut Style, (With<MainColumnUi>, Without<LevelSelectColumnUi>)>,
+    mut q_level_select_column: Query<&mut Style, (With<LevelSelectColumnUi>, Without<MainColumnUi>)>,
+) {
+    for interaction in &mut q_interaction {
+        if let bevy::ui::Interaction::Pressed = *interaction {
+            let mut main_column_style = q_main_column.single_mut();
+            let mut level_select_column_style = q_level_select_column.single_mut();
+
+            level_select_column_style.right = Val::Percent(100.0);
+            main_column_style.left = Val::Auto;
+        }
+    }
+}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct LevelSelectButtonUi {
+    pub level: isize,
+}
+
+fn create_level_button(grid: &mut ChildBuilder, number: isize, asset_server: &Res<AssetServer>) {
+    let level = format!("{:02}", number);
+
+    grid
+        .spawn(NodeBundle {
+            style: Style::default(),
+            ..default()
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            height: Val::Px(65.0),
+                            width: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(8.0)),
+                            padding: UiRect::horizontal(Val::Px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::WHITE),
+                        image: UiImage::new(asset_server.load("sprites/small_btn.png")),
+                        ..default()
+                    },
+                    LevelSelectButtonUi { level: number },
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        level,
+                        TextStyle {
+                            font: asset_server.load("fonts/ThaleahFat.ttf"),
+                            font_size: 40.0,
+                            color: Color::rgb(1.0, 1.0, 1.0),
+                        },
+                    ));
+                });
+        });
+}
+
+fn create_disabled_level_button(grid: &mut ChildBuilder, asset_server: &Res<AssetServer>) {
+    grid
+        .spawn(NodeBundle {
+            style: Style::default(),
+            ..default()
+        })
+        .with_children(|parent| {
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            height: Val::Px(65.0),
+                            width: Val::Px(65.0),
+                            margin: UiRect::all(Val::Px(8.0)),
+                            padding: UiRect::horizontal(Val::Px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        background_color: BackgroundColor(Color::WHITE),
+                        image: UiImage::new(asset_server.load("sprites/small_btn_disabled.png")),
+                        ..default()
+                    },
+                ));
+        });
+}
+
+fn handle_level_button_interactions(
+    mut q_interaction: Query<&bevy::ui::Interaction, (Changed<bevy::ui::Interaction>, With<LevelSelectButtonUi>)>,
+    mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
+    mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
+) {
+    for interaction in &mut q_interaction {
+        if let bevy::ui::Interaction::Pressed = *interaction {
+            let mut transition_left_column_animator = q_transition_left.single_mut();
+            let mut transition_right_column_animator = q_transition_right.single_mut();
+
+            let tween = Tween::new(
+                EaseFunction::QuarticInOut,
+                Duration::from_secs_f32(0.5),
+                UiPositionLens {
+                    start: UiRect {
+                        left: Val::Percent(100.0),
+                        top: Val::Auto,
+                        right: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                    end: UiRect {
+                        left: Val::Percent(40.0),
+                        top: Val::Auto,
+                        right: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                },
+            ).with_completed_event(1);
+
+            transition_left_column_animator.set_tweenable(tween);
+
+            let tween = Tween::new(
+                EaseFunction::QuarticInOut,
+                Duration::from_secs_f32(0.5),
+                UiPositionLens {
+                    start: UiRect {
+                        right: Val::Percent(100.0),
+                        top: Val::Auto,
+                        left: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                    end: UiRect {
+                        right: Val::Percent(40.0),
+                        top: Val::Auto,
+                        left: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                },
+            );
+
+            transition_right_column_animator.set_tweenable(tween);
+        }
+    }
+}
+
+fn complete_transition_event_handler(
+    mut q_event: EventReader<TweenCompleted>,
+    mut commands: Commands,
+    q_despawnable: Query<Entity, With<Despawnable>>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
+    mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
+) {
+    for event in q_event.iter() {
+        dbg!(event.entity);
+        next_state.set(AppState::InGame);
+
+        for despawnable_entity in q_despawnable.iter() {
+            commands.entity(despawnable_entity).despawn();
+
+            let mut transition_left_column_animator = q_transition_left.single_mut();
+            let mut transition_right_column_animator = q_transition_right.single_mut();
+
+            let tween = Tween::new(
+                EaseFunction::QuarticInOut,
+                Duration::from_secs_f32(0.5),
+                UiPositionLens {
+                    start: UiRect {
+                        left: Val::Percent(40.0),
+                        top: Val::Auto,
+                        right: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                    end: UiRect {
+                        left: Val::Percent(100.0),
+                        top: Val::Auto,
+                        right: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                },
+            );
+
+            transition_left_column_animator.set_tweenable(tween);
+
+            let tween = Tween::new(
+                EaseFunction::QuarticInOut,
+                Duration::from_secs_f32(0.5),
+                UiPositionLens {
+                    start: UiRect {
+                        right: Val::Percent(40.0),
+                        top: Val::Auto,
+                        left: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                    end: UiRect {
+                        right: Val::Percent(100.0),
+                        top: Val::Auto,
+                        left: Val::Auto,
+                        bottom: Val::Auto,
+                    },
+                },
+            );
+
+            transition_right_column_animator.set_tweenable(tween);
+        }
+    }
+}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct MainMenuUi {}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct MainColumnUi {}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct LevelSelectColumnUi {}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct TransitionColumnLeftUi {}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct TransitionColumnRightUi {}
+
+fn setup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let main_menu_ui_container = (
+            NodeBundle {
+            style: Style {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::Center,
+                border: UiRect::all(Val::Px(5.0)),
+                ..default()
+            },
+            ..default()
+        },
+        Despawnable {},
+    );
+
+    let main_column = (
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(80.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            z_index: ZIndex::Global(1),
+            ..default()
+        },
+        MainColumnUi {},
+    );
+
+    let level_select_column = (
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(80.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                right: Val::Percent(100.0),
+                ..default()
+            },
+            z_index: ZIndex::Global(1),
+            ..default()
+        },
+        LevelSelectColumnUi {},
+    );
+
+    let grid_container = NodeBundle {
+        style: Style {
+            display: Display::Grid,
+            grid_template_columns: vec![GridTrack::flex(1.0), GridTrack::flex(1.0), GridTrack::flex(1.0), GridTrack::flex(1.0)],
+            margin: UiRect::bottom(Val::Px(32.0)),
+            ..default()
+        },
+        ..default()
+    };
+
+    commands
+        .spawn(main_menu_ui_container)
+        .with_children(|parent| {
+            parent
+                .spawn(main_column)
+                .with_children(|parent| {
+                    create_play_button(parent, &asset_server);
+                });
+
+            parent
+                .spawn(level_select_column)
+                .with_children(|parent| {
+                    parent
+                        .spawn(grid_container)
+                        .with_children(|grid| {
+                            for number in 1..=9 {
+                                create_level_button(grid, number, &asset_server);
+                            }
+                            for _ in 1..=3 {
+                                create_disabled_level_button(grid, &asset_server);
+                            }
+                        });
+
+                    create_back_button(parent, &asset_server);
+                });
+        });
+}
+
+fn setup_transition_ui(
+   mut commands: Commands, asset_server: Res<AssetServer>,
+) {
+    let ui_container = (
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ..default()
+        },
+    );
+
+    let tween = Tween::new(
+        EaseMethod::Linear,
+        Duration::from_secs(0),
+        UiPositionLens {
+            start: UiRect::DEFAULT,
+            end: UiRect::DEFAULT,
+        },
+    );
+    // let tween = Tween::new(
+        // EaseFunction::QuarticInOut,
+        // Duration::from_secs_f32(0.5),
+        // UiPositionLens {
+            // start: UiRect {
+                // left: Val::Percent(40.0),
+                // top: Val::Auto,
+                // right: Val::Auto,
+                // bottom: Val::Auto,
+            // },
+            // end: UiRect {
+                // left: Val::Percent(100.0),
+                // top: Val::Auto,
+                // right: Val::Auto,
+                // bottom: Val::Auto,
+            // },
+        // },
+    // );
+
+    let transition_column_left = (
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                left: Val::Percent(100.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::BLACK),
+            z_index: ZIndex::Global(99),
+            ..default()
+        },
+        TransitionColumnLeftUi {},
+        bevy_tweening::Animator::new(Delay::new(Duration::from_secs_f32(1.0)).then(tween)),
+    );
+
+    let tween = Tween::new(
+        EaseMethod::Linear,
+        Duration::from_secs(0),
+        UiPositionLens {
+            start: UiRect::DEFAULT,
+            end: UiRect::DEFAULT,
+        },
+    );
+
+    // let tween = Tween::new(
+        // EaseFunction::QuarticInOut,
+        // Duration::from_secs_f32(0.5),
+        // UiPositionLens {
+            // start: UiRect {
+                // right: Val::Percent(40.0),
+                // top: Val::Auto,
+                // left: Val::Auto,
+                // bottom: Val::Auto,
+            // },
+            // end: UiRect {
+                // right: Val::Percent(100.0),
+                // top: Val::Auto,
+                // left: Val::Auto,
+                // bottom: Val::Auto,
+            // },
+        // },
+    // );
+
+    let transition_column_right = (
+        NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                right: Val::Percent(100.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                ..default()
+            },
+            background_color: BackgroundColor(Color::BLACK),
+            z_index: ZIndex::Global(99),
+            ..default()
+        },
+        TransitionColumnRightUi {},
+        bevy_tweening::Animator::new(Delay::new(Duration::from_secs_f32(1.0)).then(tween)),
+    );
+
+    commands
+        .spawn(ui_container)
+        .with_children(|parent| {
+            parent
+                .spawn(transition_column_left);
+
+            parent
+                .spawn(transition_column_right);
+        });
 }
 
 fn sync_emitter_position(
@@ -108,8 +656,8 @@ fn load_next_level(
 
     *level_selection = LevelSelection::Index(1);
 
-    for wall_entity in q_despawnable.iter() {
-        commands.entity(wall_entity).despawn();
+    for despawnable_entity in q_despawnable.iter() {
+        commands.entity(despawnable_entity).despawn();
     }
 }
 
@@ -452,7 +1000,7 @@ fn update_level_dimensions (
 pub fn follow_player_with_camera(
     q_player: Query<&Transform, (With<Player>, Without<Camera>)>,
     mut q_camera: Query<(&mut Transform, Entity), With<Camera>>,
-    mut move_event_writer: EventWriter<ParallaxMoveEvent>,
+    // mut move_event_writer: EventWriter<ParallaxMoveEvent>,
     level_dimensions: Res<LevelDimensions>,
 ) {
     let player = if let Ok(player) = q_player.get_single() {
@@ -461,7 +1009,7 @@ pub fn follow_player_with_camera(
         return
     };
 
-    let (camera, entity) = if let Ok(camera) = q_camera.get_single_mut() {
+    let (mut camera, entity) = if let Ok(camera) = q_camera.get_single_mut() {
         camera
     } else {
         return
@@ -521,13 +1069,15 @@ pub fn follow_player_with_camera(
         speed.y = 0.0;
     }
 
-    speed.x = new_pos_x - camera.translation.x;
-    speed.y = new_pos_y - camera.translation.y;
+    camera.translation.x = new_pos_x;
+    camera.translation.y = new_pos_y;
+    // speed.x = new_pos_x - camera.translation.x;
+    // speed.y = new_pos_y - camera.translation.y;
 
-    move_event_writer.send(ParallaxMoveEvent {
-        camera_move_speed: speed,
-        camera: entity,
-    });
+    // move_event_writer.send(ParallaxMoveEvent {
+        // camera_move_speed: speed,
+        // camera: entity,
+    // });
 }
 
 fn handle_activate_checkpoint(
@@ -726,7 +1276,7 @@ fn setup_walls(
         commands.spawn((
             SpatialBundle::from_transform(Transform::from_xyz(
                 rect.top_left.x as f32 * 24.0 + rect.width as f32 * 24.0 / 2.0,
-                rect.top_left.y as f32 * 24.0, 0.0
+                rect.top_left.y as f32 * 24.0 + 12.0, 0.0
             )),
             RigidBody::Fixed,
             Collider::cuboid(12.0 * rect.width as f32, 12.0),
