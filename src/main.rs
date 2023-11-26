@@ -7,7 +7,7 @@ use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, prelude::{LdtkI
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController, QueryFilterFlags, RapierContext, QueryFilter};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, interaction::{Interaction}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator}}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, interaction::{Interaction}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent}}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
@@ -24,8 +24,8 @@ pub mod process_ldtk_world;
 
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum AppState {
-    #[default]
     MainMenu,
+    #[default]
     InGame,
 }
 
@@ -467,24 +467,17 @@ fn checkpoint_sprites_handle(
 
 fn respawn_player(
     mut q_player: Query<(&mut Transform, &mut Player)>,
-    q_checkpoint: Query<(&Transform, &Checkpoint), Without<Player>>,
+    q_checkpoint: Query<&Transform, (With<SpawnPoint>, Without<Player>)>,
     time: Res<Time>,
 ) {
     for (mut transform, mut player) in q_player.iter_mut() {
         player.respawn_timer.tick(time.delta());
 
         if player.respawn_timer.just_finished() {
-            let mut checkpoint_position: Vec2 = Vec2::ZERO;
-
-            for (checkpoint_transform, checkpoint) in q_checkpoint.iter() {
-                if checkpoint.is_active {
-                    checkpoint_position = checkpoint_transform.translation.truncate();
-                    break;
-                }
+            for spawnpoint_transform in q_checkpoint.iter() {
+                transform.translation.x = spawnpoint_transform.translation.x;
+                transform.translation.y = spawnpoint_transform.translation.y + 5.0;
             }
-
-            transform.translation.x = checkpoint_position.x;
-            transform.translation.y = checkpoint_position.y + 5.0;
         }
 
         if player.respawn_timer.finished() {
@@ -561,6 +554,7 @@ fn handle_player_hurt_collision(
             shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
         ) {
             let hit_component = q_hit.get(entity);
+
             if hit_component.is_ok() {
                 player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
                 player.is_respawning = true;
@@ -569,9 +563,6 @@ fn handle_player_hurt_collision(
         }
     }
 }
-
-#[derive(Clone, Component, Debug, Default)]
-pub struct HitComponent {}
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(LdtkWorldBundle {

@@ -155,7 +155,7 @@ impl From<&EntityInstance> for SensorBundle {
     fn from(entity_instance: &EntityInstance) -> SensorBundle {
         match entity_instance.identifier.as_ref() {
             "Spikes" => SensorBundle {
-                collider: Collider::cuboid(12.0, 6.0), // #TODO pull out from editor
+                collider: Collider::cuboid(10.0, 3.0),
                 ..default()
             },
             "Checkpoint" => SensorBundle {
