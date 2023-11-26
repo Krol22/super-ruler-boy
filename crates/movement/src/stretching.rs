@@ -1,5 +1,5 @@
 use bevy::prelude::{Query, Transform, Res, Input, KeyCode, Vec2, default};
-use bevy_rapier2d::prelude::{RapierContext, QueryFilter, QueryFilterFlags};
+use bevy_rapier2d::prelude::{RapierContext, QueryFilter, QueryFilterFlags, Collider, KinematicCharacterController};
 use kt_common::components::{player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity};
 use kt_util::constants::{PLAYER_MAXIMUM_STRETCH, PLAYER_STRETCH_SPEED};
 
@@ -19,41 +19,29 @@ pub fn stretching_controls(
 
         gravity_dir.slow_down = 1.0;
         if keyboard_input.pressed(KeyCode::Space) {
-
             if player.stretch >= PLAYER_MAXIMUM_STRETCH {
                 player.stretch = PLAYER_MAXIMUM_STRETCH;
                 continue;
             }
 
-            let ray_pos = transform.translation.truncate();
-            let ray_dir = Vec2::new(-1.1, player.stretch / 3.0 - 0.3);
-            let max_toi = 4.0;
-            let solid = true;
+            let shape = Collider::cuboid(4.0, 9.0);
+            let mut shape_pos = transform.translation.truncate();
+            shape_pos.y += player.stretch;
+            let shape_vel = Vec2::new(
+                0.0,
+                1.0,
+            );
+            let shape_rot = 0.0;
+            let max_toi = 1.0;
             let filter = QueryFilter {
                 flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
                 ..default()
             };
 
             player.grabbed_ceiling = false;
-            if let Some(_entity) = rapier_context.cast_ray(
-                ray_pos, ray_dir, max_toi, solid, filter
-            ) {
-                jump.is_jumping = false;
-                player.grabbed_ceiling = true;
-                continue;
-            }
 
-            let ray_pos = transform.translation.truncate();
-            let ray_dir = Vec2::new(1.1, player.stretch / 3.0 - 0.3);
-            let max_toi = 4.0;
-            let solid = true;
-            let filter = QueryFilter {
-                flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
-                ..default()
-            };
-
-            if let Some(_entity) = rapier_context.cast_ray(
-                ray_pos, ray_dir, max_toi, solid, filter
+            if let Some((_entity, _hit)) = rapier_context.cast_shape(
+                shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
             ) {
                 jump.is_jumping = false;
                 player.grabbed_ceiling = true;
@@ -61,7 +49,7 @@ pub fn stretching_controls(
             }
 
             player.stretch += PLAYER_STRETCH_SPEED;
-            gravity_dir.slow_down = -0.2;
+            gravity_dir.slow_down = 0.2;
             continue;
         }
 
@@ -85,13 +73,22 @@ pub fn ungrab_ceiling(
 }
 
 pub fn grab_ceiling(
-    mut q_player: Query<(&mut Player, &mut GravityDir, &mut Velocity)>,
+    mut q_player: Query<(&mut Player, &mut GravityDir, &mut Velocity, &mut KinematicCharacterController)>,
 ) {
-    for (mut player, mut gravity_dir, mut velocity) in q_player.iter_mut() {
+    for (mut player, mut gravity_dir, mut velocity, mut kcc) in q_player.iter_mut() {
         if player.grabbed_ceiling {
-            gravity_dir.dir = -7.9;
-            player.stretch -= (PLAYER_STRETCH_SPEED * 1.0);
-            velocity.current.y = 0.0;
+            gravity_dir.dir = 0.0;
+            if player.stretch > 0.0 {
+                kcc.translation = Some(
+                    Vec2::new(
+                        0.0,
+                        PLAYER_STRETCH_SPEED * 1.0,
+                    )
+                );
+
+                player.stretch -= PLAYER_STRETCH_SPEED * 1.0;
+                velocity.current.y = 0.0;
+            }
         } else {
             gravity_dir.dir = 1.0;
         }

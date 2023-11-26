@@ -63,12 +63,12 @@ pub fn horizontal_controls (
 }
 
 pub fn horizontal_controls_on_ceiling (
-    mut q_player: Query<(&mut Velocity, &Player, &Transform)>,
+    mut q_player: Query<(&mut Velocity, &mut Player, &Transform)>,
     rapier_context: Res<RapierContext>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
     let player = q_player.get_single_mut();
-    let (mut velocity, player, transform) = match player {
+    let (mut velocity, mut player, transform) = match player {
         Ok(player) => player,
         Err(..) => return,
     };
@@ -79,40 +79,28 @@ pub fn horizontal_controls_on_ceiling (
 
     velocity.current.x = 0.0;
 
-    if keyboard_input.pressed(KeyCode::Left) {
-        let ray_pos = transform.translation.truncate();
-        let ray_dir = Vec2::new(-0.1, 6.0);
-        let max_toi = 4.0;
-        let solid = true;
-        let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
-            ..default()
-        };
+    let shape = Collider::cuboid(6.0, 9.0);
+    let shape_pos = transform.translation.truncate();
+    let shape_vel = Vec2::new(0.0, player.stretch + 2.0);
+    let shape_rot = 0.0;
+    let max_toi = 1.0;
+    let filter = QueryFilter {
+        flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
+        ..default()
+    };
 
-        if let Some(_entity) = rapier_context.cast_ray(
-            ray_pos, ray_dir, max_toi, solid, filter
-        ) {
+    if let Some(_entity) = rapier_context.cast_shape(
+        shape_pos, shape_rot, shape_vel, &shape, max_toi, filter
+    ) {
+        if keyboard_input.pressed(KeyCode::Left) {
             velocity.current.x = -100.0;
-        }
+        } 
 
-        return;
-    } 
-
-    if keyboard_input.pressed(KeyCode::Right) {
-        let ray_pos = transform.translation.truncate();
-        let ray_dir = Vec2::new(0.1, 6.0);
-        let max_toi = 4.0;
-        let solid = true;
-        let filter = QueryFilter {
-            flags: QueryFilterFlags::ONLY_FIXED | QueryFilterFlags::EXCLUDE_SENSORS, 
-            ..default()
-        };
-
-        if let Some(_entity) = rapier_context.cast_ray(
-            ray_pos, ray_dir, max_toi, solid, filter
-        ) {
+        if keyboard_input.pressed(KeyCode::Right) {
             velocity.current.x = 100.0;
-        }
+        } 
+    } else {
+        player.grabbed_ceiling = false;
     }
 }
 

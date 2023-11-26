@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use bevy::{prelude::{Query, Res, Vec2, With, Transform, Vec3}, time::{Time, TimerMode, Timer}};
-use bevy_rapier2d::prelude::{KinematicCharacterController, KinematicCharacterControllerOutput, GravityScale};
+use bevy::{prelude::{Query, Res, Vec2, With, Transform, Vec3, Without}, time::{Time, TimerMode, Timer}};
+use bevy_rapier2d::prelude::{KinematicCharacterController, KinematicCharacterControllerOutput};
 use bevy_tweening::{EaseFunction, lens::TransformPositionLens, Tween};
-use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir, jump::Jump, ground_detector::{GroundDetector, self}, dust_particle_emitter::DustParticleEmitter, platform::Platform};
+use kt_common::components::{velocity::Velocity, acceleration::Acceleration, gravity::GravityDir, jump::Jump, ground_detector::{GroundDetector}, dust_particle_emitter::DustParticleEmitter, platform::Platform, player::Player};
 use kt_core::particle::ParticleEmitter;
 
 pub fn apply_velocity_to_kinematic_controller(
@@ -11,7 +11,11 @@ pub fn apply_velocity_to_kinematic_controller(
 ) {
     for (mut kcc, mut velocity, mut acceleration, gravity_dir) in q_kinematic_controller.iter_mut() {
         // Apply gravity
-        velocity.current += Vec2::new(0.0, -15.0 * gravity_dir.dir * gravity_dir.slow_down);
+        if velocity.current.y < 0.0 {
+            velocity.current += Vec2::new(0.0, -15.0 * gravity_dir.dir * gravity_dir.slow_down);
+        } else {
+            velocity.current += Vec2::new(0.0, -15.0 * gravity_dir.dir);
+        }
 
         // Movement
         velocity.current += Vec2::new(
@@ -20,13 +24,15 @@ pub fn apply_velocity_to_kinematic_controller(
         );
 
         velocity.current = velocity.current.clamp(-velocity.max, velocity.max);
-        // dbg!(time.delta_seconds());
-        kcc.translation = Some(
-            Vec2::new(
-                velocity.current.x * (1.0 / 60.0),
-                velocity.current.y * (1.0 / 60.0),
-            )
-        );
+        if kcc.translation.is_none() {
+            kcc.translation = Some(
+                Vec2::new(
+                    velocity.current.x * (1.0 / 60.0),
+                    velocity.current.y * (1.0 / 60.0),
+                )
+            );
+        }
+
 
         // Damp velocity
         velocity.current.x *= 1.0 - velocity.damping;
@@ -152,3 +158,16 @@ pub fn hit_ground(
         }
     }
 }
+
+pub fn sync_emitter_position(
+    q_player: Query<&Transform, (With<Player>, Without<DustParticleEmitter>)>,
+    mut q_particle_emitter: Query<&mut Transform, With<DustParticleEmitter>>,
+) {
+    for transform in q_player.iter() {
+        for mut emitter_transform in q_particle_emitter.iter_mut() {
+            emitter_transform.translation.x = transform.translation.x;
+            emitter_transform.translation.y = transform.translation.y + 3.0;
+        }
+    }
+}
+

@@ -125,25 +125,12 @@ fn main() {
     update_level_dimensions,
     follow_player_with_camera,
     elevator_handle,
-    sync_emitter_position,
     handle_pin,
     load_next_level,
 ).chain()
     .run_if(in_state(AppState::InGame)));
     
     app.run();
-}
-
-fn sync_emitter_position(
-    q_player: Query<&Transform, (With<Player>, Without<DustParticleEmitter>)>,
-    mut q_particle_emitter: Query<&mut Transform, With<DustParticleEmitter>>,
-) {
-    for transform in q_player.iter() {
-        for mut emitter_transform in q_particle_emitter.iter_mut() {
-            emitter_transform.translation.x = transform.translation.x;
-            emitter_transform.translation.y = transform.translation.y + 3.0;
-        }
-    }
 }
 
 fn load_next_level(
