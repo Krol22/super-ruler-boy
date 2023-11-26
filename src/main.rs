@@ -7,14 +7,14 @@ use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, prelude::{LdtkI
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController, QueryFilterFlags, RapierContext, QueryFilter};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, interaction::{Interaction}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent}}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys}, interaction::Interaction}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
 use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
-use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls};
-use save_game::{GameState, load};
+use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit};
+use save_game::{GameState, load, clean_entities};
 use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler, save_game_after_transition};
 
 pub mod save_game;
@@ -24,8 +24,8 @@ pub mod process_ldtk_world;
 
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum AppState {
-    MainMenu,
     #[default]
+    MainMenu,
     InGame,
 }
 
@@ -76,12 +76,13 @@ fn main() {
         .register_ldtk_entity::<PlatformBundle>("Platform")
         .register_ldtk_entity::<PinBundle>("Pin")
         .register_ldtk_entity::<SharpenerBundle>("Sharpener")
+        .register_ldtk_entity::<ExitBundle>("Exit")
         .register_saveable::<GameState>();
 
 /*
     GLOBAL
 */
-    app.add_systems(Startup, load);
+    app.add_systems(Startup, (load, clean_entities).chain());
 
 /*
    MENU STATE
@@ -106,9 +107,11 @@ fn main() {
         .add_systems(Update, process_platform.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_pin.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_sharpener.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_exit.run_if(in_state(AppState::InGame)))
         .add_systems(Update, pickup_pin.run_if(in_state(AppState::InGame)))
         .add_systems(Update, switch_levels_transition_event_handler.run_if(in_state(AppState::InGame)))
         .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, handle_exit_door.run_if(in_state(AppState::InGame)))
         .add_systems(Update, (
     reset_overlaps,
     handle_player_interaction,
@@ -126,64 +129,10 @@ fn main() {
     follow_player_with_camera,
     elevator_handle,
     handle_pin,
-    load_next_level,
 ).chain()
     .run_if(in_state(AppState::InGame)));
     
     app.run();
-}
-
-fn load_next_level(
-    input: Res<Input<KeyCode>>,
-    mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
-    mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
-) {
-    if input.just_pressed(KeyCode::N) {
-        let mut transition_left_column_animator = q_transition_left.single_mut();
-        let mut transition_right_column_animator = q_transition_right.single_mut();
-
-        let tween = Tween::new(
-            EaseFunction::QuarticInOut,
-            Duration::from_secs_f32(0.5),
-            UiPositionLens {
-                start: UiRect {
-                    left: Val::Percent(100.0),
-                    top: Val::Auto,
-                    right: Val::Auto,
-                    bottom: Val::Auto,
-                },
-                end: UiRect {
-                    left: Val::Percent(40.0),
-                    top: Val::Auto,
-                    right: Val::Auto,
-                    bottom: Val::Auto,
-                },
-            },
-        ).with_completed_event(1);
-
-        transition_left_column_animator.set_tweenable(tween);
-
-        let tween = Tween::new(
-            EaseFunction::QuarticInOut,
-            Duration::from_secs_f32(0.5),
-            UiPositionLens {
-                start: UiRect {
-                    right: Val::Percent(100.0),
-                    top: Val::Auto,
-                    left: Val::Auto,
-                    bottom: Val::Auto,
-                },
-                end: UiRect {
-                    right: Val::Percent(40.0),
-                    top: Val::Auto,
-                    left: Val::Auto,
-                    bottom: Val::Auto,
-                },
-            },
-        );
-
-        transition_right_column_animator.set_tweenable(tween);
-    }
 }
 
 fn restart_player_pos(
@@ -282,10 +231,12 @@ fn handle_pin(
 
 fn pickup_pin(
     mut q_pins: Query<(&mut Pin, &Interaction)>,
+    mut game_state: ResMut<GameState>,
 ) {
     for (mut pin, interaction) in q_pins.iter_mut() {
         if interaction.is_overlapping && !pin.picked {
             pin.state.update_value(PinState::Picked);
+            game_state.picked_keys += 1;
         }
     }
 }
@@ -474,6 +425,69 @@ fn respawn_player(
 
 }
 
+fn handle_exit_door (
+    q_exit_door: Query<(&Interaction, &RequiredKeys)>,
+    mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
+    mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
+    mut game_state: ResMut<GameState>,
+) {
+    for (interaction, require_keys) in q_exit_door.iter() {
+        if !interaction.is_overlapping {
+            continue;
+        }
+
+        if game_state.picked_keys as i32 != require_keys.0 {
+            continue;
+        }
+
+        let mut transition_left_column_animator = q_transition_left.single_mut();
+        let mut transition_right_column_animator = q_transition_right.single_mut();
+
+        let tween = Tween::new(
+            EaseFunction::QuarticInOut,
+            Duration::from_secs_f32(0.5),
+            UiPositionLens {
+                start: UiRect {
+                    left: Val::Percent(100.0),
+                    top: Val::Auto,
+                    right: Val::Auto,
+                    bottom: Val::Auto,
+                },
+                end: UiRect {
+                    left: Val::Percent(40.0),
+                    top: Val::Auto,
+                    right: Val::Auto,
+                    bottom: Val::Auto,
+                },
+            },
+        ).with_completed_event(4);
+
+        transition_left_column_animator.set_tweenable(tween);
+
+        let tween = Tween::new(
+            EaseFunction::QuarticInOut,
+            Duration::from_secs_f32(0.5),
+            UiPositionLens {
+                start: UiRect {
+                    right: Val::Percent(100.0),
+                    top: Val::Auto,
+                    left: Val::Auto,
+                    bottom: Val::Auto,
+                },
+                end: UiRect {
+                    right: Val::Percent(40.0),
+                    top: Val::Auto,
+                    left: Val::Auto,
+                    bottom: Val::Auto,
+                },
+            },
+        );
+
+        transition_right_column_animator.set_tweenable(tween);
+        game_state.picked_keys = 0;
+    }
+}
+
 fn handle_player_interaction (
     q_player: Query<(&mut Transform, &Velocity), With<Player>>,
     mut q_interaction: Query<&mut Interaction>,
@@ -500,6 +514,10 @@ fn handle_player_interaction (
         ) {
             let interaction = q_interaction.get_mut(entity);
             if let Ok(mut interaction) = interaction {
+                if interaction.disabled {
+                    continue;
+                }
+
                 interaction.is_overlapping = true;
             }
 

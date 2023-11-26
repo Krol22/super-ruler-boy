@@ -80,18 +80,18 @@ pub fn switch_levels_transition_event_handler (
     mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
     mut level_selection: ResMut<LevelSelection>,
     mut game_state: ResMut<GameState>,
-    // world: &World,
 ) {
     for event in q_event.iter() {
-        if (event.user_data != 1) {
+        if event.user_data != 4 {
             continue;
         }
 
-        *level_selection = LevelSelection::Index(game_state.current_level as usize);
-        game_state.current_level += 1;
+        *level_selection = LevelSelection::Index((game_state.current_level) as usize);
 
+        dbg!(event.user_data);
+
+        game_state.current_level += 1;
         game_state.update_unlocked_levels();
-        // let _ = world.save("gol");
 
         for despawnable_entity in q_despawnable.iter() {
             commands.entity(despawnable_entity).despawn();

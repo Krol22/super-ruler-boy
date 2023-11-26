@@ -43,6 +43,16 @@ pub struct PlatformBundle {
 pub struct PlatformInstance {}
 
 #[derive(Default, Bundle, LdtkEntity)]
+pub struct ExitBundle {
+    pub exit_instance: ExitInstance,
+    #[with(RequiredKeys::from_field)]
+    pub required_keys: RequiredKeys,
+}
+
+#[derive(Default, Component, Clone, Debug)]
+pub struct ExitInstance {}
+
+#[derive(Default, Bundle, LdtkEntity)]
 pub struct PinBundle {
     pub pin_instance: PinInstance,
 }
@@ -69,6 +79,17 @@ pub struct SharpenerBundle {
 
 #[derive(Default, Component, Clone, Debug)]
 pub struct SharpenerInstance {}
+
+#[derive(Clone, Component, Debug, Default, Reflect, PartialEq, PartialOrd)]
+pub struct RequiredKeys(pub i32);
+
+impl RequiredKeys {
+    pub fn from_field(entity_instance: &EntityInstance) -> RequiredKeys {
+        RequiredKeys(*entity_instance
+            .get_int_field("required_pins")
+            .expect("expected entity to have non-nullable required_pins int field"))
+    }
+}
 
 #[derive(Clone, Component, Debug, Default, Reflect, PartialEq, PartialOrd)]
 pub struct Level(pub i32);

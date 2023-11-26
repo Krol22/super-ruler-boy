@@ -1,4 +1,4 @@
-use bevy::{prelude::{Resource, ReflectResource, World}, reflect::Reflect};
+use bevy::{prelude::{Resource, ReflectResource, World, Entity, Commands, Query, With, GlobalTransform, Transform, Visibility, ResMut}, reflect::Reflect};
 use bevy_save::WorldSaveableExt;
 
 #[derive(Resource, Debug, Clone, Reflect)]
@@ -6,6 +6,7 @@ use bevy_save::WorldSaveableExt;
 pub struct GameState {
     pub unlocked_levels: isize,
     pub current_level: isize,
+    pub picked_keys: isize,
 }
 
 impl Default for GameState {
@@ -13,6 +14,7 @@ impl Default for GameState {
         GameState {
             unlocked_levels: 1,
             current_level: 1,
+            picked_keys: 0,
         }
     }
 }
@@ -29,12 +31,18 @@ pub fn load(
     world: &mut World,
 ) {
     let _ = world.load("gol");
+    dbg!("LOAD");
 }
 
-// fn save(world: &World) {
-    // let keys = world.resource::<Input<KeyCode>>();
+pub fn clean_entities(
+    q_entities: Query<Entity, (With<GlobalTransform>, With<Transform>, With<Visibility>)>,
+    mut game_state: ResMut<GameState>,
+    mut commands: Commands,
+) {
+    game_state.current_level = 0;
+    game_state.picked_keys = 0;
 
-    // if keys.just_released(KeyCode::Return) {
-        // world.save("gol").expect("Failed to save");
-    // }
-// }
+    for entity in q_entities.iter() {
+        commands.entity(entity).despawn();
+    }
+}

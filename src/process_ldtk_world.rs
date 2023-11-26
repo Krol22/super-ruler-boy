@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren}, sprite::SpriteBundle, ui::Interaction};
+use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren}, sprite::SpriteBundle};
 use bevy_rapier2d::prelude::{Collider, RigidBody, Sensor, GravityScale};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformPositionLens, SpriteColorLens}, RepeatCount};
-use kt_common::components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance}, player::Player, pin::Pin, sharpener::Sharpener};
+use kt_common::components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Point {
@@ -222,6 +222,37 @@ pub fn process_spawn_point(
 
         player_transform.translation.x = transform.translation.x;
         player_transform.translation.y = transform.translation.y;
+    }
+}
+
+pub fn process_exit (
+    q_entity: Query<(&Transform, &RequiredKeys, Entity), Added<ExitInstance>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let texture_handle = asset_server.load("sprites/pin.png");
+
+    for (transform, required_keys, entity) in q_entity.iter() {
+        commands
+            .entity(entity)
+            .despawn();
+
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_xyz(
+                    transform.translation.x,
+                    transform.translation.y,
+                    0.0,
+                ),
+                texture: texture_handle.clone(),
+                ..default()
+            },
+            Collider::cuboid(12.0, 24.0),
+            Sensor,
+            RequiredKeys(required_keys.0),
+            Interaction::default(),
+            Despawnable {},
+        ));
     }
 }
 

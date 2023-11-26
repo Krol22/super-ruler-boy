@@ -230,7 +230,7 @@ pub fn handle_level_button_interactions(
                         bottom: Val::Auto,
                     },
                 },
-            ).with_completed_event(1);
+            ).with_completed_event(3);
 
             transition_left_column_animator.set_tweenable(tween);
 
@@ -255,6 +255,7 @@ pub fn handle_level_button_interactions(
 
             transition_right_column_animator.set_tweenable(tween);
             game_state.current_level = level_select_button.level;
+            dbg!(level_select_button.level);
             *level_selection = LevelSelection::Index(level_select_button.level as usize - 1);
         }
     }
