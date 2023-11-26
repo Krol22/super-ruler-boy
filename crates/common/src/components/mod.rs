@@ -1,5 +1,6 @@
 pub mod acceleration;
 pub mod checkpoint;
+pub mod despawnable;
 pub mod dust_particle_emitter;
 pub mod limb;
 pub mod interaction;
@@ -12,3 +13,5 @@ pub mod stretch;
 pub mod sharpener;
 pub mod velocity;
 pub mod gravity;
+pub mod ui;
+pub mod ldtk;

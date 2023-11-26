@@ -9,3 +9,5 @@ bevy.workspace = true
 bevy-inspector-egui.workspace = true
 rand.workspace = true
 bevy_prototype_lyon.workspace = true
+bevy_ecs_ldtk.workspace = true
+bevy_rapier2d.workspace = true

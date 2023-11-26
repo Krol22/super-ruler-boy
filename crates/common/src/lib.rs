@@ -4,6 +4,7 @@ use components::{player::Player, checkpoint::Checkpoint};
 pub mod bundles;
 pub mod components;
 pub mod assets;
+pub mod resources;
 
 #[derive(Debug, Default)]
 pub struct CommonPlugin {}
