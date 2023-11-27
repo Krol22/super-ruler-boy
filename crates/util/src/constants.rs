@@ -5,7 +5,7 @@ pub const INITIAL_WINDOW_HEIGHT: f32 = 768.0;
 pub const ASPECT_RATIO_X: f32 = 512.0 / 1.5;
 pub const ASPECT_RATIO_Y: f32 = 364.0 / 1.5;
 
-pub const PLAYER_MAXIMUM_STRETCH: f32 = 90.0;
+pub const PLAYER_MAXIMUM_STRETCH: f32 = 88.0;
 pub const PLAYER_STRETCH_SPEED: f32 = 5.0;
 pub const PLAYER_HORIZONTAL_MOVE_SPEED: f32 = 400.0;
 

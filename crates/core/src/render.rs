@@ -1,4 +1,4 @@
-use bevy::{prelude::{Plugin, App, EventReader, Update, AssetEvent, Image, Assets, ResMut, default}, render::{texture::ImageSampler, render_resource::{SamplerDescriptor, AddressMode}}};
+use bevy::{prelude::{Plugin, App, EventReader, Update, AssetEvent, Image, Assets, ResMut, default, AssetServer, Res}, render::{texture::ImageSampler, render_resource::{SamplerDescriptor, AddressMode}}};
 
 #[derive(Debug, Default)]
 pub struct RenderPlugin {}
@@ -15,18 +15,28 @@ impl Plugin for RenderPlugin {
 pub fn set_sprites_filter_mode(
     mut ev_asset: EventReader<AssetEvent<Image>>,
     mut assets: ResMut<Assets<Image>>,
+    asset_server: Res<AssetServer>,
 ) {
     for ev in ev_asset.iter() {
         if let AssetEvent::Created { handle } = ev {
             if let Some(texture) = assets.get_mut(handle) {
+                // Determine the appropriate address mode based on the handle path
+                let address_mode = match asset_server.get_handle_path(handle)
+                    .and_then(|handle_path| {
+                        handle_path.path().to_str().map(String::from)
+                    })
+                {
+                    Some(ref path) if path == "sprites/ruler_extension_part.png" => AddressMode::Repeat,
+                    _ => AddressMode::ClampToEdge,
+                };
+
+                // Set the sampler descriptor
                 let sampler_descriptor = SamplerDescriptor {
-                    address_mode_u: AddressMode::ClampToEdge,
-                    address_mode_v: AddressMode::ClampToEdge,
+                    address_mode_u: address_mode,
+                    address_mode_v: address_mode,
                     ..default()
                 };
-                let image_sampler = ImageSampler::Descriptor(sampler_descriptor);
-
-                texture.sampler_descriptor = image_sampler;
+                texture.sampler_descriptor = ImageSampler::Descriptor(sampler_descriptor);
             }
         }
     }
