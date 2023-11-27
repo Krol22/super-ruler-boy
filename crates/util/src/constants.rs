@@ -17,3 +17,6 @@ pub const PLAYER_HIT_RESPAWN_TIME: f32 = 1.0;
 
 pub const PLAYER_CAMERA_MARGIN_X: usize = 10; // 10% of the width from the center
 pub const PLAYER_CAMERA_MARGIN_Y: usize = 10; // 10% of the height from the center
+
+pub const Z_INDEX_PENCIL_BOX: f32 = 4.0;
+pub const Z_INDEX_TILE_MAP_BOX: f32 = 5.0;

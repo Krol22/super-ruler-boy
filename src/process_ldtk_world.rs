@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren}, sprite::SpriteBundle};
+use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren, Image}, sprite::{SpriteBundle, Sprite}, render::render_resource::Texture, time::{Timer, TimerMode}};
 use bevy_rapier2d::prelude::{Collider, RigidBody, Sensor, GravityScale};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformPositionLens, SpriteColorLens}, RepeatCount};
 use kt_common::components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction};
+use kt_util::constants::{Z_INDEX_PENCIL_BOX, PLAYER_HIT_RESPAWN_TIME};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Point {
@@ -208,20 +209,35 @@ pub fn process_pin(
 }
 
 pub fn process_spawn_point(
-    q_entity: Query<&Transform, Added<SpawnPoint>>,
-    mut q_player: Query<&mut Transform, (With<Player>, Without<SpawnPoint>)>,
+    mut q_entity: Query<(&mut Transform, Entity), Added<SpawnPoint>>,
+    mut q_player: Query<(&mut Transform, &mut Player), Without<SpawnPoint>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
 ) {
-    for transform in q_entity.iter() {
+    let texture_handle: bevy::prelude::Handle<Image> = asset_server.load("sprites/pencil_box.png");
+
+    for (mut transform, entity) in q_entity.iter_mut() {
         let player = q_player.get_single_mut();
 
         if player.is_err() {
             continue
         }
 
-        let mut player_transform = player.unwrap();
+        let (mut player_transform, mut player) = player.unwrap();
 
         player_transform.translation.x = transform.translation.x;
         player_transform.translation.y = transform.translation.y;
+
+        commands.entity(entity).insert((
+            Sprite {
+                ..default()
+            },
+            texture_handle.clone(),
+        ));
+
+        transform.translation.z = Z_INDEX_PENCIL_BOX;
+        player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
+        player.is_respawning = true;
     }
 }
 

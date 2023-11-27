@@ -10,7 +10,7 @@ use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPos
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys}, interaction::Interaction}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
-use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y};
+use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y, PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE};
 use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
 use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit};
@@ -116,6 +116,7 @@ fn main() {
     reset_overlaps,
     handle_player_interaction,
     restart_player_pos,
+    respawn_animation,
     handle_animation,
     animator_sys,
     handle_extension_stretch,
@@ -404,25 +405,45 @@ fn checkpoint_sprites_handle(
 }
 
 fn respawn_player(
-    mut q_player: Query<(&mut Transform, &mut Player)>,
+    mut q_player: Query<(&mut Transform, &mut Player, &mut Velocity, &mut Jump)>,
     q_checkpoint: Query<&Transform, (With<SpawnPoint>, Without<Player>)>,
     time: Res<Time>,
 ) {
-    for (mut transform, mut player) in q_player.iter_mut() {
+    for (mut transform, mut player, mut velocity, mut jump) in q_player.iter_mut() {
         player.respawn_timer.tick(time.delta());
 
         if player.respawn_timer.just_finished() {
             for spawnpoint_transform in q_checkpoint.iter() {
                 transform.translation.x = spawnpoint_transform.translation.x;
-                transform.translation.y = spawnpoint_transform.translation.y + 5.0;
+                transform.translation.y = spawnpoint_transform.translation.y + 10.0;
+                velocity.current.y = PLAYER_JUMP_SPEED;
+                player.respawning_animation_timer = Timer::from_seconds(0.3, TimerMode::Once);
+                jump.is_jumping = true;
             }
         }
-
-        if player.respawn_timer.finished() {
-            player.is_respawning = false;
-        }
     }
+}
 
+fn respawn_animation(
+    mut q_player: Query<(&mut Player, &mut Velocity)>,
+    mut q_spawn_points: Query<&mut Transform, With<SpawnPoint>>,
+    time: Res<Time>
+) {
+    for (mut player, mut velocity) in q_player.iter_mut() {
+        player.respawning_animation_timer.tick(time.delta());
+
+        if !player.respawning_animation_timer.finished() {
+            velocity.current.y += JUMP_HOLD_FORCE * player.respawning_animation_timer.percent_left();
+        }
+
+        if player.respawning_animation_timer.just_finished() {
+            player.is_respawning = false;
+
+            for mut transform in q_spawn_points.iter_mut() {
+                transform.translation.z = 0.0;
+            }
+        }
+    } 
 }
 
 fn handle_exit_door (
@@ -798,7 +819,7 @@ fn spawn_player(
 
     let player_limbs = commands.spawn((
         PlayerLimbs {},
-        SpatialBundle::from_transform(Transform::from_xyz(0.0, 2.0, 0.0)),
+        SpatialBundle::from_transform(Transform::from_xyz(0.0, 2.0, 1.0)),
         bevy_tweening::Animator::new(tween),
     )).id();
 
