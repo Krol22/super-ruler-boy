@@ -26,3 +26,8 @@ pub struct TransitionColumnLeftUi {}
 #[derive(Clone, Component, Debug, Default)]
 pub struct TransitionColumnRightUi {}
 
+#[derive(Clone, Component, Debug, Default)]
+pub struct PinsContainerUI {}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct PinUI {}

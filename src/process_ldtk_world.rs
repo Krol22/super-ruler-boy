@@ -1,10 +1,12 @@
 use std::time::Duration;
 
-use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren, Image}, sprite::{SpriteBundle, Sprite}, render::render_resource::Texture, time::{Timer, TimerMode}};
+use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren, Image, ResMut, EventWriter, Assets}, sprite::{SpriteBundle, Sprite, TextureAtlas, TextureAtlasSprite, SpriteSheetBundle}, render::render_resource::Texture, time::{Timer, TimerMode}};
 use bevy_rapier2d::prelude::{Collider, RigidBody, Sensor, GravityScale};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformPositionLens, SpriteColorLens}, RepeatCount};
-use kt_common::components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction};
+use kt_common::{components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys, Exit}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction}, events::PinUiUpdated};
 use kt_util::constants::{Z_INDEX_PENCIL_BOX, PLAYER_HIT_RESPAWN_TIME};
+
+use crate::save_game::GameState;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Point {
@@ -244,9 +246,22 @@ pub fn process_spawn_point(
 pub fn process_exit (
     q_entity: Query<(&Transform, &RequiredKeys, Entity), Added<ExitInstance>>,
     mut commands: Commands,
+    mut game_state: ResMut<GameState>,
+    mut ev_pin_pickup: EventWriter<PinUiUpdated>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
     asset_server: Res<AssetServer>,
 ) {
-    let texture_handle = asset_server.load("sprites/pin.png");
+    let texture_handle = asset_server.load("sprites/school_locker.png");
+    let texture_atlas = TextureAtlas::from_grid(
+        texture_handle,
+        Vec2::new(36.0, 73.0),
+        2,
+        1,
+        None,
+        None,
+    );
+
+    let texture_atlas_handle = texture_atlases.add(texture_atlas);
 
     for (transform, required_keys, entity) in q_entity.iter() {
         commands
@@ -254,21 +269,26 @@ pub fn process_exit (
             .despawn();
 
         commands.spawn((
-            SpriteBundle {
+            SpriteSheetBundle {
+                texture_atlas: texture_atlas_handle.clone(),
+                sprite: TextureAtlasSprite::new(0),
                 transform: Transform::from_xyz(
                     transform.translation.x,
                     transform.translation.y,
                     0.0,
                 ),
-                texture: texture_handle.clone(),
                 ..default()
             },
             Collider::cuboid(12.0, 24.0),
             Sensor,
             RequiredKeys(required_keys.0),
+            Exit::default(),
             Interaction::default(),
             Despawnable {},
         ));
+
+        game_state.required_keys = required_keys.0 as isize;
+        ev_pin_pickup.send(PinUiUpdated());
     }
 }
 

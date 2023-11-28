@@ -1,31 +1,33 @@
 use std::time::Duration;
 
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Without, Entity, Camera, ImagePlugin, Color, in_state, OnEnter, States, Component, Resource}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, time::{Time, Timer, TimerMode}, ecs::{schedule::ExecutorKind }, diagnostic::{FrameTimeDiagnosticsPlugin}, ui::{Style, Val, UiRect}, };
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Without, Entity, Camera, ImagePlugin, Color, in_state, OnEnter, States, Component, Resource, EventWriter}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, time::{Time, Timer, TimerMode}, ecs::{schedule::ExecutorKind }, diagnostic::{FrameTimeDiagnosticsPlugin}, ui::{Style, Val, UiRect}, };
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController, QueryFilterFlags, RapierContext, QueryFilter};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys}, interaction::Interaction}};
+use in_game_ui::{setup_in_game_ui, consume_pin_ui_update_events};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys, Exit}, interaction::Interaction}, events::{PinUiUpdated}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y, PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE};
 use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
 use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit};
-use save_game::{GameState, load, clean_entities};
+use save_game::{GameState, load, reset_state};
 use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler, save_game_after_transition};
 
 pub mod save_game;
 pub mod main_menu_ui;
 pub mod screen_transitions;
 pub mod process_ldtk_world;
+pub mod in_game_ui;
 
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum AppState {
-    #[default]
     MainMenu,
+    #[default]
     InGame,
 }
 
@@ -82,7 +84,7 @@ fn main() {
 /*
     GLOBAL
 */
-    app.add_systems(Startup, (load, clean_entities).chain());
+    app.add_systems(Startup, (load, reset_state).chain());
 
 /*
    MENU STATE
@@ -100,6 +102,7 @@ fn main() {
     app
         .add_systems(OnEnter(AppState::InGame), setup)
         .add_systems(OnEnter(AppState::InGame), spawn_player)
+        .add_systems(OnEnter(AppState::InGame), setup_in_game_ui)
         .add_systems(Startup, setup_transition_ui)
         .add_systems(Update, setup_walls.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_spawn_point.run_if(in_state(AppState::InGame)))
@@ -112,6 +115,9 @@ fn main() {
         .add_systems(Update, switch_levels_transition_event_handler.run_if(in_state(AppState::InGame)))
         .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
         .add_systems(Update, handle_exit_door.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, consume_pin_ui_update_events.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, change_exit_sprite.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, open_exit.run_if(in_state(AppState::InGame)))
         .add_systems(Update, (
     reset_overlaps,
     handle_player_interaction,
@@ -233,11 +239,13 @@ fn handle_pin(
 fn pickup_pin(
     mut q_pins: Query<(&mut Pin, &Interaction)>,
     mut game_state: ResMut<GameState>,
+    mut ev_pin_pickup: EventWriter<PinUiUpdated>
 ) {
     for (mut pin, interaction) in q_pins.iter_mut() {
         if interaction.is_overlapping && !pin.picked {
             pin.state.update_value(PinState::Picked);
             game_state.picked_keys += 1;
+            ev_pin_pickup.send(PinUiUpdated());
         }
     }
 }
@@ -327,13 +335,13 @@ pub fn follow_player_with_camera(
         speed.y = -1.0;
     }
 
-    if player.translation.y - ASPECT_RATIO_Y / 2.0 + y_margin <= 0.0 {
-        new_pos_y = ASPECT_RATIO_Y / 2.0;
+    if player.translation.y - ASPECT_RATIO_Y / 2.0 + y_margin <= 8.0 {
+        new_pos_y = ASPECT_RATIO_Y / 2.0 + 8.0;
         speed.y = 0.0;
     }
 
-    if player.translation.y + ASPECT_RATIO_Y / 2.0 - y_margin >= level_dimensions.height {
-        new_pos_y = level_dimensions.height - ASPECT_RATIO_Y / 2.0;
+    if player.translation.y + ASPECT_RATIO_Y / 2.0 - y_margin >= level_dimensions.height - 8.0 {
+        new_pos_y = level_dimensions.height - ASPECT_RATIO_Y / 2.0 - 8.0;
         speed.y = 0.0;
     }
 
@@ -758,6 +766,29 @@ fn handle_animation(
                 animator.current_animation = animation_name.clone();
             }
 
+        }
+    }
+}
+
+fn open_exit(
+    mut q_exits: Query<&mut Exit>,
+    game_state: Res<GameState>,
+) {
+    for mut exit in q_exits.iter_mut() {
+        if game_state.picked_keys == game_state.required_keys {
+            exit.is_open = true;
+        }
+    }
+}
+
+fn change_exit_sprite(
+    mut q_exits: Query<(&mut TextureAtlasSprite, &Exit)>,
+) {
+    for (mut sprite, exit) in q_exits.iter_mut() {
+        if exit.is_open {
+            sprite.index = 1;
+        } else {
+            sprite.index = 0;
         }
     }
 }

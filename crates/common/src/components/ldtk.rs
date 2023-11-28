@@ -52,6 +52,11 @@ pub struct ExitBundle {
 #[derive(Default, Component, Clone, Debug)]
 pub struct ExitInstance {}
 
+#[derive(Default, Component, Clone, Debug)]
+pub struct Exit {
+    pub is_open: bool,
+}
+
 #[derive(Default, Bundle, LdtkEntity)]
 pub struct PinBundle {
     pub pin_instance: PinInstance,
