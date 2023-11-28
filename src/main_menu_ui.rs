@@ -292,6 +292,19 @@ pub fn setup_menu(
         }
     );
 
+    let logo = (
+        ImageBundle {
+            style: Style {
+                width: Val::Px(115.0 * 4.0),
+                height: Val::Px(82.0 * 4.0),
+                margin: UiRect::bottom(Val::Px(64.0)),
+                ..default()
+            },
+            image: UiImage::new(asset_server.load("sprites/logo.png")),
+            ..default()
+        }
+    );
+
     let main_column = (
         NodeBundle {
             style: Style {
@@ -348,6 +361,8 @@ pub fn setup_menu(
             parent
                 .spawn(main_column)
                 .with_children(|parent| {
+                    parent.spawn(logo);
+
                     create_play_button(parent, &asset_server);
                 });
 
