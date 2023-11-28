@@ -6,12 +6,12 @@ use bevy::prelude::PluginGroup;
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController, QueryFilterFlags, RapierContext, QueryFilter};
-use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}};
+use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}, RepeatCount};
 use in_game_ui::{setup_in_game_ui, consume_pin_ui_update_events};
 use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys, Exit}, interaction::Interaction}, events::{PinUiUpdated}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
-use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y, PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE};
+use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y, PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE, Z_INDEX_PENCIL_BOX};
 use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
 use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit};
@@ -118,6 +118,8 @@ fn main() {
         .add_systems(Update, consume_pin_ui_update_events.run_if(in_state(AppState::InGame)))
         .add_systems(Update, change_exit_sprite.run_if(in_state(AppState::InGame)))
         .add_systems(Update, open_exit.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, reset_level_after_restart.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, restart_pin.run_if(in_state(AppState::InGame)))
         .add_systems(Update, (
     reset_overlaps,
     handle_player_interaction,
@@ -208,8 +210,9 @@ fn handle_pin(
     )>,
 ) {
     for (mut pin, transform, mut transform_animator, mut sprite_animator) in q_pin.iter_mut() {
-        if !pin.picked && matches!(pin.state.current, PinState::Picked) && !pin.state.is_same_as_previous() {
+        // dbg!(&pin);
 
+        if !pin.picked && matches!(pin.state.current, PinState::Picked) && !pin.state.is_same_as_previous() {
             let tween_up = Tween::new(
                 EaseFunction::SineInOut,
                 Duration::from_secs_f64(0.3),
@@ -243,6 +246,7 @@ fn pickup_pin(
 ) {
     for (mut pin, interaction) in q_pins.iter_mut() {
         if interaction.is_overlapping && !pin.picked {
+            dbg!(&pin, &interaction);
             pin.state.update_value(PinState::Picked);
             game_state.picked_keys += 1;
             ev_pin_pickup.send(PinUiUpdated());
@@ -276,7 +280,6 @@ fn update_level_dimensions (
 pub fn follow_player_with_camera(
     q_player: Query<&Transform, (With<Player>, Without<Camera>)>,
     mut q_camera: Query<(&mut Transform, Entity), With<Camera>>,
-    // mut move_event_writer: EventWriter<ParallaxMoveEvent>,
     level_dimensions: Res<LevelDimensions>,
 ) {
     let player = if let Ok(player) = q_player.get_single() {
@@ -414,14 +417,15 @@ fn checkpoint_sprites_handle(
 
 fn respawn_player(
     mut q_player: Query<(&mut Transform, &mut Player, &mut Velocity, &mut Jump)>,
-    q_checkpoint: Query<&Transform, (With<SpawnPoint>, Without<Player>)>,
+    mut q_checkpoint: Query<&mut Transform, (With<SpawnPoint>, Without<Player>)>,
     time: Res<Time>,
 ) {
     for (mut transform, mut player, mut velocity, mut jump) in q_player.iter_mut() {
         player.respawn_timer.tick(time.delta());
 
         if player.respawn_timer.just_finished() {
-            for spawnpoint_transform in q_checkpoint.iter() {
+            for mut spawnpoint_transform in q_checkpoint.iter_mut() {
+                spawnpoint_transform.translation.z = Z_INDEX_PENCIL_BOX;
                 transform.translation.x = spawnpoint_transform.translation.x;
                 transform.translation.y = spawnpoint_transform.translation.y + 10.0;
                 velocity.current.y = PLAYER_JUMP_SPEED;
@@ -452,6 +456,74 @@ fn respawn_animation(
             }
         }
     } 
+}
+
+fn restart_pin(
+    mut q_pins: Query<(
+        &mut Pin,
+        &mut Transform,
+        &mut Sprite,
+        &mut bevy_tweening::Animator<Transform>,
+        &mut bevy_tweening::Animator<Sprite>)>,
+) {
+    for (mut pin, mut transform, mut sprite, mut animator_transform, mut animator_sprite) in q_pins.iter_mut() {
+        if (matches!(pin.state.current, PinState::Idle) && !pin.state.is_same_as_previous()) {
+            let tween = Tween::new(
+                EaseFunction::SineInOut,
+                Duration::from_secs_f32(2.0),
+                TransformPositionLens {
+                    start: Vec3::new(pin.initial_position.x, pin.initial_position.y, 0.0),
+                    end: Vec3::new(pin.initial_position.x, pin.initial_position.y + 6.0, 0.0),
+                }
+            )
+                .with_repeat_count(RepeatCount::Infinite)
+                .with_repeat_strategy(bevy_tweening::RepeatStrategy::MirroredRepeat);
+
+            let opacity_tween = Tween::new(
+                EaseFunction::SineInOut,
+                Duration::from_secs_f32(0.0),
+                SpriteColorLens {
+                    start: Color::WHITE,
+                    end: Color::WHITE,
+                }
+            );
+
+            transform.translation.y = pin.initial_position.y;
+            transform.translation.x = pin.initial_position.x;
+            sprite.color = Color::WHITE;
+            pin.picked = false;
+
+            animator_transform.set_tweenable(tween);
+            animator_sprite.set_tweenable(opacity_tween);
+            pin.state.update_value(PinState::Idle);
+
+            dbg!("restart");
+        }
+    }
+}
+
+fn reset_level_after_restart(
+    q_player: Query<&Player>,
+    mut q_pins: Query<&mut Pin>,
+    mut game_state: ResMut<GameState>,
+    mut ev_pin_pickup: EventWriter<PinUiUpdated>,
+    mut q_exits: Query<&mut Exit>,
+) {
+    for player in q_player.iter() {
+        if player.respawning_animation_timer.just_finished() {
+            game_state.picked_keys = 0;
+
+            for mut pin in q_pins.iter_mut() {
+                pin.state.update_value(PinState::Idle);
+            }
+
+            ev_pin_pickup.send(PinUiUpdated());
+
+            for mut exit in q_exits.iter_mut() {
+                exit.is_open = false;
+            }
+        }
+    }
 }
 
 fn handle_exit_door (

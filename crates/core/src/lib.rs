@@ -21,9 +21,9 @@ pub struct CorePlugin {}
 impl Plugin for CorePlugin {
     fn build(&self, app: &mut App) {
         app
-            // .add_plugins(
-                // WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Grave)),
-            // )
+            .add_plugins(
+                WorldInspectorPlugin::default().run_if(input_toggle_active(true, KeyCode::Grave)),
+            )
             .add_plugins(TweeningPlugin)
             .add_plugins(ShapePlugin)
             .add_plugins(AnimationPlugin {})
