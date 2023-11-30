@@ -86,7 +86,7 @@ pub fn switch_levels_transition_event_handler (
             continue;
         }
 
-        *level_selection = LevelSelection::Index((game_state.current_level + 1) as usize);
+        *level_selection = LevelSelection::Index((game_state.current_level) as usize);
 
         game_state.current_level += 1;
         game_state.update_unlocked_levels();

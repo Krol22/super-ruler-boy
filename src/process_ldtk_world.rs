@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren, Image, ResMut, EventWriter, Assets}, sprite::{SpriteBundle, Sprite, TextureAtlas, TextureAtlasSprite, SpriteSheetBundle}, render::render_resource::Texture, time::{Timer, TimerMode}};
 use bevy_rapier2d::prelude::{Collider, RigidBody, Sensor, GravityScale};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformPositionLens, SpriteColorLens}, RepeatCount};
-use kt_common::{components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys, Exit}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction}, events::PinUiUpdated};
+use kt_common::{components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys, Exit, HitComponent}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction}, events::PinUiUpdated};
 use kt_util::constants::{Z_INDEX_PENCIL_BOX, PLAYER_HIT_RESPAWN_TIME};
 
 use crate::save_game::GameState;
@@ -116,7 +116,7 @@ pub fn process_sharpener(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {
-    let texture_handle = asset_server.load("sprites/pin.png");
+    let texture_handle = asset_server.load("sprites/sharpener.png");
 
     for (transform, point_to, entity) in q_entity.iter() {
         commands
@@ -144,10 +144,12 @@ pub fn process_sharpener(
                 texture: texture_handle.clone(),
                 ..default()
             },
-            Collider::cuboid(4.5, 4.5),
+            // Collider::(11.0, 7.5),
+            Collider::ball(7.5),
             Sensor,
             Despawnable {},
             Sharpener {},
+            HitComponent {},
             Interaction::default(),
             bevy_tweening::Animator::new(tween),
         ));

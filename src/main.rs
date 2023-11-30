@@ -37,7 +37,7 @@ fn main() {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
               title: WINDOW_TITLE.to_string(),
-              resizable: false,
+              resizable: true,
               resolution: WindowResolution::new(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT),
               present_mode: PresentMode::AutoVsync,
               ..default()
@@ -111,10 +111,8 @@ fn main() {
         .add_systems(Update, process_pin.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_sharpener.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_exit.run_if(in_state(AppState::InGame)))
-        .add_systems(Update, pickup_pin.run_if(in_state(AppState::InGame)))
         .add_systems(Update, switch_levels_transition_event_handler.run_if(in_state(AppState::InGame)))
         .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
-        .add_systems(Update, handle_exit_door.run_if(in_state(AppState::InGame)))
         .add_systems(Update, consume_pin_ui_update_events.run_if(in_state(AppState::InGame)))
         .add_systems(Update, change_exit_sprite.run_if(in_state(AppState::InGame)))
         .add_systems(Update, open_exit.run_if(in_state(AppState::InGame)))
@@ -137,7 +135,9 @@ fn main() {
     update_level_dimensions,
     follow_player_with_camera,
     elevator_handle,
+    pickup_pin,
     handle_pin,
+    handle_exit_door,
 ).chain()
     .run_if(in_state(AppState::InGame)));
     
@@ -630,6 +630,8 @@ fn handle_player_interaction (
                 }
 
                 interaction.is_overlapping = true;
+            } else {
+                dbg!("Could not find interaction entity");
             }
 
             continue
@@ -646,12 +648,25 @@ fn reset_overlaps (
 }
 
 fn handle_player_hurt_collision(
-    mut q_player: Query<(&mut Transform, &Velocity, &mut Player)>,
+    mut q_player: Query<(&mut Transform, &mut Velocity, &mut Player)>,
+    mut q_limbs: Query<&mut Sprite, With<Limb>>,
+    mut q_limbs_2: Query<&mut TextureAtlasSprite, With<Limb>>,
     q_hit: Query<&HitComponent>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
 ) {
-    for (transform, velocity, mut player) in q_player.iter_mut() {
+    for (transform, mut velocity, mut player) in q_player.iter_mut() {
+        player.hit_timer.tick(time.delta());
+        if player.hit_timer.just_finished() {
+            for mut sprite in q_limbs.iter_mut() {
+                sprite.color = Color::Rgba{ red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 };
+            }
+
+            for mut sprite in q_limbs_2.iter_mut() {
+                sprite.color = Color::Rgba{ red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 };
+            }
+        }
+
         if !player.respawn_timer.finished() && !player.respawn_timer.paused() {
             continue;
         }
@@ -674,6 +689,18 @@ fn handle_player_hurt_collision(
             if hit_component.is_ok() {
                 player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
                 player.is_respawning = true;
+
+                for mut sprite in q_limbs.iter_mut() {
+                    sprite.color = Color::Rgba{ red: 1.0, green: 1.0, blue: 1.0, alpha: 0.0 };
+                }
+
+                for mut sprite in q_limbs_2.iter_mut() {
+                    sprite.color = Color::Rgba{ red: 1.0, green: 1.0, blue: 1.0, alpha: 0.0 };
+                }
+
+                velocity.current.y = 200.0;
+                velocity.current.x = transform.scale.x * 200.0;
+                player.hit_timer = Timer::from_seconds(0.1, TimerMode::Once);
             }
             continue
         }
@@ -838,11 +865,11 @@ fn handle_animation(
                 Err(..) => continue,
             };
 
-            if velocity.current.x < 0.0 && transform.scale.x >= 1.0 {
+            if !player.is_respawning && velocity.current.x < 0.0 && transform.scale.x >= 1.0 {
                 animator.set_tweenable(create_transform_tween(1.0, -1.0));
             }
 
-            if velocity.current.x > 0.0 && transform.scale.x <= -1.0 {
+            if !player.is_respawning && velocity.current.x > 0.0 && transform.scale.x <= -1.0 {
                 animator.set_tweenable(create_transform_tween(-1.0, 1.0));
             }
 

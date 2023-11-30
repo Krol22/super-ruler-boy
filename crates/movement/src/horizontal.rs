@@ -17,7 +17,7 @@ pub fn horizontal_controls (
             continue;
         }
 
-        if keyboard_input.pressed(KeyCode::Left) || keyboard_input.pressed(KeyCode::A) {
+        if keyboard_input.pressed(KeyCode::Left) {
             let shape = Collider::cuboid(6.0, 9.0 + player.stretch / 2.0);
             let shape_pos = transform.translation.truncate() + Vec2::new(-0.2, player.stretch / 2.0 + 0.1);
             let shape_vel = Vec2::new(-1.0, 0.0);
@@ -37,7 +37,7 @@ pub fn horizontal_controls (
             }
 
             velocity.current.x = -PLAYER_HORIZONTAL_MOVE_SPEED;
-        } else if keyboard_input.pressed(KeyCode::Right) || keyboard_input.pressed(KeyCode::D) {
+        } else if keyboard_input.pressed(KeyCode::Right) {
             let shape = Collider::cuboid(6.0, 9.0 + player.stretch / 2.0);
             let shape_pos = transform.translation.truncate() + Vec2::new(0.2, player.stretch / 2.0 + 0.1);
             let shape_vel = Vec2::new(1.0, 0.0);

@@ -14,11 +14,17 @@ pub fn stretching_controls(
         }
 
         if player.is_respawning {
+            player.stretch -= PLAYER_STRETCH_SPEED;
+
+            if player.stretch < 0.0 {
+                player.stretch = 0.0;
+            }
+
             continue;
         }
 
         gravity_dir.slow_down = 1.0;
-        if keyboard_input.pressed(KeyCode::Space) {
+        if keyboard_input.pressed(KeyCode::X) {
             if player.stretch >= PLAYER_MAXIMUM_STRETCH {
                 player.stretch = PLAYER_MAXIMUM_STRETCH;
                 continue;
@@ -65,7 +71,7 @@ pub fn ungrab_ceiling(
     mut q_player: Query<&mut Player>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    if keyboard_input.pressed(KeyCode::Z) {
+    if keyboard_input.just_pressed(KeyCode::Space) {
         for mut player in q_player.iter_mut() {
             player.grabbed_ceiling = false;
         }

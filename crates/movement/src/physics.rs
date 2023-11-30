@@ -120,7 +120,7 @@ pub fn handle_platform_off_screen(
         }
 
         if platform.is_stepped_on {
-            platform.restart_timer = Timer::from_seconds(2.5, TimerMode::Once);
+            platform.restart_timer = Timer::from_seconds(1.0, TimerMode::Once);
         }
 
         platform.is_stepped_on = false;

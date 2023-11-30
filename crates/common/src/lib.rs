@@ -1,6 +1,6 @@
 use bevy::prelude::{Plugin, App};
-use components::{player::Player, checkpoint::Checkpoint};
-use events::PinUiUpdated;
+use components::{player::Player, checkpoint::Checkpoint, interaction::Interaction};
+use events::{PinUiUpdated};
 
 pub mod bundles;
 pub mod components;
@@ -16,6 +16,7 @@ impl Plugin for CommonPlugin {
         app
             .register_type::<Checkpoint>()
             .register_type::<Player>()
+            .register_type::<Interaction>()
             .add_event::<PinUiUpdated>();
     }
 }

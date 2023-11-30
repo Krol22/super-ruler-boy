@@ -9,12 +9,12 @@ pub fn jumping_controls (
     time: Res<Time>,
 ) {
     for (mut velocity, mut jump, player) in q_player.iter_mut() {
-        if keyboard_input.pressed(KeyCode::X) && jump.is_jumping && !jump.jump_timer.finished() {
+        if keyboard_input.pressed(KeyCode::Space) && jump.is_jumping && !jump.jump_timer.finished() {
             jump.jump_timer.tick(time.delta());
             velocity.current.y += JUMP_HOLD_FORCE * jump.jump_timer.percent_left();
         }
 
-        if keyboard_input.just_pressed(KeyCode::X) {
+        if keyboard_input.just_pressed(KeyCode::Space) {
             if !jump.can_jump {
                 continue;
             }
@@ -29,7 +29,7 @@ pub fn jumping_controls (
         }
 
 
-        if keyboard_input.just_released(KeyCode::X) || jump.jump_timer.finished() {
+        if keyboard_input.just_released(KeyCode::Space) || jump.jump_timer.finished() {
             jump.is_jumping = false;
         }
     }
