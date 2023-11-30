@@ -47,11 +47,11 @@ pub fn apply_velocity_to_kinematic_controller(
 }
 
 pub fn clear_velocity_if_kinematic_on_ground(
-    mut q_kinematic: Query<(&KinematicCharacterControllerOutput, &Jump, &mut Velocity, &mut GroundDetector)>,
+    mut q_kinematic: Query<(&KinematicCharacterControllerOutput, &Jump, &mut Velocity, &mut GroundDetector, &Player)>,
 ) {
-    for (kcco, jump, mut velocity, mut ground_detector) in q_kinematic.iter_mut() {
+    for (kcco, jump, mut velocity, mut ground_detector, player) in q_kinematic.iter_mut() {
         let original = velocity.current.y;
-        if kcco.grounded && !jump.is_jumping {
+        if kcco.grounded && !jump.is_jumping && !player.is_respawning {
             velocity.current.y = -40.0;
         }
 

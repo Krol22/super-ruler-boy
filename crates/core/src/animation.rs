@@ -13,6 +13,7 @@ pub struct Animator {
     pub current_animation: String,
     pub prev_animation: String,
     pub current_frame: usize,
+    pub paused: bool,
     pub counter: f32,
 }
 
@@ -38,6 +39,10 @@ pub fn animator_sys (
             animator.counter = new_counter;
             animator.prev_animation = current_animation.to_string();
 
+            continue;
+        }
+
+        if animator.paused {
             continue;
         }
 

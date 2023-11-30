@@ -374,7 +374,7 @@ pub fn setup_menu(
                         TextStyle {
                             font: asset_server.load("fonts/ThaleahFat.ttf"),
                             font_size: 62.0,
-                            color: Color::rgb(1.0, 1.0, 1.1),
+                            color: Color::rgb(0.96, 0.67, 0.1),
                         }
                     ));
 

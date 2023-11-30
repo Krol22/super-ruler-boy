@@ -246,7 +246,6 @@ fn pickup_pin(
 ) {
     for (mut pin, interaction) in q_pins.iter_mut() {
         if interaction.is_overlapping && !pin.picked {
-            dbg!(&pin, &interaction);
             pin.state.update_value(PinState::Picked);
             game_state.picked_keys += 1;
             ev_pin_pickup.send(PinUiUpdated());
@@ -416,11 +415,12 @@ fn checkpoint_sprites_handle(
 }
 
 fn respawn_player(
-    mut q_player: Query<(&mut Transform, &mut Player, &mut Velocity, &mut Jump)>,
+    mut q_player: Query<(&mut Transform, &mut Player, &mut Velocity, &mut Jump, Entity)>,
     mut q_checkpoint: Query<&mut Transform, (With<SpawnPoint>, Without<Player>)>,
     time: Res<Time>,
+    mut commands: Commands,
 ) {
-    for (mut transform, mut player, mut velocity, mut jump) in q_player.iter_mut() {
+    for (mut transform, mut player, mut velocity, mut jump, entity) in q_player.iter_mut() {
         player.respawn_timer.tick(time.delta());
 
         if player.respawn_timer.just_finished() {
@@ -431,17 +431,23 @@ fn respawn_player(
                 velocity.current.y = PLAYER_JUMP_SPEED;
                 player.respawning_animation_timer = Timer::from_seconds(0.3, TimerMode::Once);
                 jump.is_jumping = true;
+
+                commands.entity(entity).remove::<Collider>();
+                commands.entity(entity).insert({
+                    Collider::cuboid(6.0, 9.0)
+                });
             }
         }
     }
 }
 
 fn respawn_animation(
-    mut q_player: Query<(&mut Player, &mut Velocity)>,
+    mut q_player: Query<(&mut Player, &mut Velocity, Entity)>,
     mut q_spawn_points: Query<&mut Transform, With<SpawnPoint>>,
-    time: Res<Time>
+    time: Res<Time>,
+    mut commands: Commands,
 ) {
-    for (mut player, mut velocity) in q_player.iter_mut() {
+    for (mut player, mut velocity, entity) in q_player.iter_mut() {
         player.respawning_animation_timer.tick(time.delta());
 
         if !player.respawning_animation_timer.finished() {
@@ -450,6 +456,10 @@ fn respawn_animation(
 
         if player.respawning_animation_timer.just_finished() {
             player.is_respawning = false;
+            commands.entity(entity).remove::<Collider>();
+            commands.entity(entity).insert({
+                Collider::cuboid(6.0, 9.0)
+            });
 
             for mut transform in q_spawn_points.iter_mut() {
                 transform.translation.z = 0.0;
@@ -800,15 +810,24 @@ fn create_transform_tween(from_x: f32, to_x: f32) -> Tween<Transform> {
 }
 
 fn handle_animation(
-    q_player: Query<(&Velocity, &Children), With<Player>>,    
+    q_player: Query<(&Velocity, &Children, &Player)>,    
     mut q_player_limbs: Query<(&Children, &mut bevy_tweening::Animator<Transform>, &Transform), With<PlayerLimbs>>,
     mut q_limbs: Query<&mut Animator, With<Limb>>,
 ) {
-    for (velocity, children) in q_player.iter() {
+    for (velocity, children, player) in q_player.iter() {
         let mut animation_name = "Idle".to_string();
+        let mut play_animation = true;
 
         if velocity.current.x.abs() > 8.0 {
             animation_name = "Move".to_string();
+        }
+
+        if player.grabbed_ceiling {
+            animation_name = "Extending".to_string();
+
+            if velocity.current.x.abs() < 8.0 {
+                play_animation = false; 
+            }
         }
 
         for &child in children.iter() {
@@ -836,6 +855,7 @@ fn handle_animation(
                 };
 
                 animator.current_animation = animation_name.clone();
+                animator.paused = !play_animation;
             }
 
         }
@@ -874,7 +894,7 @@ fn spawn_player(
     let texture_atlas = TextureAtlas::from_grid(
         texture_handle,
         Vec2::new(19.0, 22.0),
-        13,
+        16,
         3,
         None,
         None,
@@ -936,15 +956,15 @@ fn spawn_player(
     };
 
     let legs_move_animation = Animation {
-        frames: (4..12).collect(),
+        frames: (4..11).collect(),
         looping: true,
         fps: 12,
     };
 
     let legs_extending_animation = Animation {
-        frames: vec![0],
+        frames: (12..15).collect(),
         looping: true,
-        fps: 1,
+        fps: 10,
     };
 
     legs_animations.insert("Idle".to_string(), legs_idle_animation);
@@ -964,6 +984,7 @@ fn spawn_player(
             current_animation: "Idle".to_string(),
             prev_animation: "Idle".to_string(),
             current_frame: 0,
+            paused: false,
         },
         Limb::new(LimbType::Legs)
     )).id();
@@ -972,21 +993,21 @@ fn spawn_player(
     let mut body_animations = HashMap::new();
 
     let body_idle_animation = Animation {
-        frames: vec![13, 14, 15, 16],
+        frames: vec![16, 17, 18, 19],
         looping: true,
         fps: 5,
     };
 
     let body_move_animation = Animation {
-        frames: (17..25).collect(),
+        frames: (20..27).collect(),
         looping: true,
         fps: 12,
     };
 
     let body_extending_animation = Animation {
-        frames: vec![13],
+        frames: (28..31).collect(),
         looping: true,
-        fps: 1,
+        fps: 10,
     };
 
     body_animations.insert("Idle".to_string(), body_idle_animation);
@@ -1006,6 +1027,7 @@ fn spawn_player(
             current_animation: "Idle".to_string(),
             prev_animation: "Idle".to_string(),
             current_frame: 0,
+            paused: false,
         },
         Limb::new(LimbType::Body)
     )).id();
@@ -1014,21 +1036,21 @@ fn spawn_player(
     let mut hands_animations = HashMap::new();
 
     let hands_idle_animation = Animation {
-        frames: vec![26, 27, 28, 29],
+        frames: vec![32, 33, 34, 35],
         looping: true,
         fps: 5,
     };
 
     let hands_move_animation = Animation {
-        frames: (30..38).collect(),
+        frames: (36..43).collect(),
         looping: true,
         fps: 12,
     };
 
     let hands_extending_animation = Animation {
-        frames: vec![26],
+        frames: (44..47).collect(),
         looping: true,
-        fps: 1,
+        fps: 10,
     };
 
     hands_animations.insert("Idle".to_string(), hands_idle_animation);
@@ -1048,6 +1070,7 @@ fn spawn_player(
             current_animation: "Idle".to_string(),
             prev_animation: "Idle".to_string(),
             current_frame: 0,
+            paused: false,
         },
         Limb::new(LimbType::Hands)
     )).id();
