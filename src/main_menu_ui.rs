@@ -2,6 +2,7 @@ use std::{time::Duration};
 
 use bevy::{prelude::{Component, ChildBuilder, AssetServer, Res, ButtonBundle, Color, TextBundle, default, BuildChildren, Query, Changed, Without, With, NodeBundle, Commands, ResMut, ImageBundle, AudioBundle, PlaybackSettings, AudioSink, AudioSinkPlayback}, ui::{Style, Val, UiRect, JustifyContent, AlignItems, BackgroundColor, UiImage, PositionType, FlexDirection, ZIndex, GridTrack, Display}, text::TextStyle, audio::PlaybackMode};
 use bevy_ecs_ldtk::LevelSelection;
+use bevy_persistent::Persistent;
 use bevy_tweening::{Tween, EaseFunction, lens::UiPositionLens};
 use kt_common::components::{ui::{PlayButtonUi, MainColumnUi, LevelSelectColumnUi, LevelSelectButtonUi, TransitionColumnLeftUi, TransitionColumnRightUi, ButtonClickSound}, despawnable::Despawnable};
 
@@ -195,7 +196,7 @@ pub fn handle_level_button_interactions(
     mut q_interaction: Query<(&bevy::ui::Interaction, &LevelSelectButtonUi), Changed<bevy::ui::Interaction>>,
     mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
     mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
-    mut game_state: ResMut<GameState>,
+    mut game_state: ResMut<Persistent<GameState>>,
     mut level_selection: ResMut<LevelSelection>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -255,8 +256,8 @@ pub fn handle_level_button_interactions(
 
             transition_right_column_animator.set_tweenable(tween);
             game_state.current_level = level_select_button.level;
-            // *level_selection = LevelSelection::Index(level_select_button.level as usize - 1);
-            *level_selection = LevelSelection::Index(5);
+            *level_selection = LevelSelection::Index(level_select_button.level as usize - 1);
+            // *level_selection = LevelSelection::Index(5);
         }
     }
 }
@@ -264,7 +265,7 @@ pub fn handle_level_button_interactions(
 pub fn setup_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    game_state: Res<GameState>,
+    game_state: Res<Persistent<GameState>>,
 ) {
     let main_menu_ui_container = (
         NodeBundle {

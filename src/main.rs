@@ -1,10 +1,11 @@
-use std::time::Duration;
+use std::{time::Duration, path::Path};
 
 use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Without, Entity, Camera, ImagePlugin, Color, in_state, OnEnter, States, Component, Resource, EventWriter, AudioBundle, PlaybackSettings, AudioSink, AudioSinkPlayback, GlobalVolume}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::{HashMap}, time::{Time, Timer, TimerMode}, ecs::{schedule::ExecutorKind }, diagnostic::{FrameTimeDiagnosticsPlugin}, ui::{Style, Val, UiRect}, audio::{PlaybackMode, VolumeLevel}, };
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkSettings, LevelBackground, LayerMetadata};
 use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
+use bevy_persistent::{Persistent, StorageFormat};
 use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController, QueryFilterFlags, RapierContext, QueryFilter};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}, RepeatCount};
 use in_game_ui::{setup_in_game_ui, consume_pin_ui_update_events};
@@ -15,8 +16,8 @@ use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIG
 // use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
 use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit, process_text};
-use save_game::{GameState};
-use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler};
+use save_game::{GameState, load};
+use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler, save_game_after_transition};
 use setup_sound_ui::{sound_ui, handle_sound_button_interactions};
 
 pub mod save_game;
@@ -64,8 +65,20 @@ fn main() {
     app
         .add_state::<AppState>();
 
+    let config_dir = dirs::config_dir()
+        .map(|native_config_dir| native_config_dir.join("pixel-arena"))
+        .unwrap_or(Path::new("local").join("configuration"));
+
     app
-        .insert_resource(GameState::default())
+        .insert_resource(
+                    Persistent::<GameState>::builder()
+            .name("game state")
+            .format(StorageFormat::Json)
+            .path(config_dir.join("game-state.json"))
+            .default(GameState { unlocked_levels: 1, current_level: 0, picked_keys: 0, required_keys: 0 })
+            .build()
+            .expect("failed to initialize game state")
+                        )
         .insert_resource(LevelSelection::Index(0))
         .insert_resource(LevelDimensions::default())
         .insert_resource(LdtkSettings {
@@ -115,7 +128,7 @@ fn main() {
         .add_systems(Update, process_sharpener.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_exit.run_if(in_state(AppState::InGame)))
         .add_systems(Update, switch_levels_transition_event_handler.run_if(in_state(AppState::InGame)))
-        // .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
         .add_systems(Update, consume_pin_ui_update_events.run_if(in_state(AppState::InGame)))
         .add_systems(Update, change_exit_sprite.run_if(in_state(AppState::InGame)))
         .add_systems(Update, open_exit.run_if(in_state(AppState::InGame)))
@@ -124,7 +137,6 @@ fn main() {
         .add_systems(Update, (
     reset_overlaps,
     handle_player_interaction,
-    restart_player_pos,
     respawn_animation,
     handle_animation,
     animator_sys,
@@ -159,27 +171,6 @@ fn background_music (
             ..default()
         },
     });
-}
-
-fn restart_player_pos(
-    q_spawn_point: Query<&Transform, With<SpawnPoint>>,
-    mut q_player: Query<&mut Transform, (With<Player>, Without<SpawnPoint>)>,
-    input: Res<Input<KeyCode>>,
-) {
-    if input.just_pressed(KeyCode::R) {
-        for transform in q_spawn_point.iter() {
-            let player = q_player.get_single_mut();
-
-            if player.is_err() {
-                continue
-            }
-
-            let mut player_transform = player.unwrap();
-
-            player_transform.translation.x = transform.translation.x;
-            player_transform.translation.y = transform.translation.y;
-        }
-    }
 }
 
 fn elevator_handle(
@@ -269,7 +260,7 @@ fn handle_pin(
 
 fn pickup_pin(
     mut q_pins: Query<(&mut Pin, &Interaction)>,
-    mut game_state: ResMut<GameState>,
+    mut game_state: ResMut<Persistent<GameState>>,
     mut ev_pin_pickup: EventWriter<PinUiUpdated>
 ) {
     for (mut pin, interaction) in q_pins.iter_mut() {
@@ -541,7 +532,7 @@ fn restart_pin(
 fn reset_level_after_restart(
     q_player: Query<&Player>,
     mut q_pins: Query<&mut Pin>,
-    mut game_state: ResMut<GameState>,
+    mut game_state: ResMut<Persistent<GameState>>,
     mut ev_pin_pickup: EventWriter<PinUiUpdated>,
     mut q_exits: Query<&mut Exit>,
 ) {
@@ -566,7 +557,7 @@ fn handle_exit_door (
     q_exit_door: Query<(&Interaction, &RequiredKeys)>,
     mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
     mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
-    mut game_state: ResMut<GameState>,
+    mut game_state: ResMut<Persistent<GameState>>,
 ) {
     for (interaction, require_keys) in q_exit_door.iter() {
         if !interaction.is_overlapping {
@@ -928,7 +919,7 @@ fn handle_animation(
 
 fn open_exit(
     mut q_exits: Query<&mut Exit>,
-    game_state: Res<GameState>,
+    game_state: Res<Persistent<GameState>>,
 ) {
     for mut exit in q_exits.iter_mut() {
         if game_state.picked_keys == game_state.required_keys {

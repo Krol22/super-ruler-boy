@@ -1,6 +1,10 @@
-use bevy::{prelude::{Resource, ReflectResource, World, Entity, Commands, Query, With, GlobalTransform, Transform, Visibility, ResMut}, reflect::Reflect};
+use std::path::Path;
 
-#[derive(Resource, Debug, Clone, Reflect)]
+use bevy_persistent::prelude::*;
+use bevy::{prelude::{Commands, Resource, ReflectResource}, reflect::Reflect};
+use serde::{Serialize, Deserialize};
+
+#[derive(Resource, Debug, Clone, Reflect, Serialize, Deserialize)]
 #[reflect(Resource)]
 pub struct GameState {
     pub unlocked_levels: isize,
@@ -26,6 +30,24 @@ impl GameState {
             self.unlocked_levels = self.current_level;
         }
     }
+}
+
+pub fn load(mut commands: Commands) {
+    let config_dir = dirs::config_dir()
+        .map(|native_config_dir| native_config_dir.join("pixel-arena"))
+        .unwrap_or(Path::new("local").join("configuration"));
+
+    commands.insert_resource(
+        Persistent::<GameState>::builder()
+            .name("game state")
+            .format(StorageFormat::Json)
+            .path(config_dir.join("game-state.json"))
+            .default(GameState { unlocked_levels: 1, current_level: 0, picked_keys: 0, required_keys: 0 })
+            .build()
+            .expect("failed to initialize game state")
+    );
+
+    dbg!("load!");
 }
 
 // pub fn load(
@@ -57,7 +79,7 @@ impl GameState {
 // }
 
 // pub fn reset_state(
-    // mut game_state: ResMut<GameState>,
+    // mut game_state: ResMut<Persistent<GameState>,
 // ) {
     // game_state.current_level = 0;
     // game_state.picked_keys = 0;

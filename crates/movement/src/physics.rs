@@ -13,9 +13,9 @@ pub fn apply_velocity_to_kinematic_controller(
     for (mut kcc, mut velocity, mut acceleration, gravity_dir) in q_kinematic_controller.iter_mut() {
         // Apply gravity
         if velocity.current.y < 0.0 {
-            velocity.current += Vec2::new(0.0, -12.0 * gravity_dir.dir * gravity_dir.slow_down);
+            velocity.current += Vec2::new(0.0, -14.0 * gravity_dir.dir * gravity_dir.slow_down);
         } else {
-            velocity.current += Vec2::new(0.0, -12.0 * gravity_dir.dir);
+            velocity.current += Vec2::new(0.0, -14.0 * gravity_dir.dir);
         }
 
         // Movement
@@ -121,7 +121,7 @@ pub fn handle_platform_off_screen(
         }
 
         if platform.is_stepped_on {
-            platform.restart_timer = Timer::from_seconds(0.5, TimerMode::Once);
+            platform.restart_timer = Timer::from_seconds(0.01, TimerMode::Once);
         }
 
         platform.is_stepped_on = false;

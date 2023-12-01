@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use bevy::{prelude::{EventReader, Commands, Query, Entity, With, ResMut, Without, NextState, Res, AssetServer, NodeBundle, default, Color, BuildChildren, World, DespawnRecursiveExt}, ui::{Style, UiRect, Val, PositionType, FlexDirection, JustifyContent, BackgroundColor, ZIndex}};
 use bevy_ecs_ldtk::LevelSelection;
+use bevy_persistent::Persistent;
 // use bevy_save::WorldSaveableExt;
 use bevy_tweening::{TweenCompleted, Tween, EaseFunction, lens::UiPositionLens, EaseMethod, Delay};
 use kt_common::components::{despawnable::Despawnable, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}};
@@ -79,7 +80,7 @@ pub fn switch_levels_transition_event_handler (
     mut q_transition_left: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnLeftUi>, Without<TransitionColumnRightUi>)>,
     mut q_transition_right: Query<&mut bevy_tweening::Animator<Style>, (With<TransitionColumnRightUi>, Without<TransitionColumnLeftUi>)>,
     mut level_selection: ResMut<LevelSelection>,
-    mut game_state: ResMut<GameState>,
+    mut game_state: ResMut<Persistent<GameState>>,
 ) {
     for event in q_event.iter() {
         if event.user_data != 4 {
@@ -144,13 +145,14 @@ pub fn switch_levels_transition_event_handler (
 
 pub fn save_game_after_transition (
     mut q_event: EventReader<TweenCompleted>,
-    world: &World, 
+    game_state: Res<Persistent<GameState>>,
 ) {
     for event in q_event.iter() {
         if event.user_data != 2 {
             continue;
         }
 
+        game_state.persist().ok();
         // let _ = world.save("gol");
     }
 }
