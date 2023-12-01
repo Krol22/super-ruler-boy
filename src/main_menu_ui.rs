@@ -255,8 +255,8 @@ pub fn handle_level_button_interactions(
 
             transition_right_column_animator.set_tweenable(tween);
             game_state.current_level = level_select_button.level;
-            dbg!(level_select_button.level);
-            *level_selection = LevelSelection::Index(level_select_button.level as usize - 1);
+            // *level_selection = LevelSelection::Index(level_select_button.level as usize - 1);
+            *level_selection = LevelSelection::Index(5);
         }
     }
 }

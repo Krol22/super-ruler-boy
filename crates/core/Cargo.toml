@@ -14,4 +14,4 @@ bevy_rapier2d.workspace = true
 bevy_prototype_lyon.workspace = true
 bevy_prototype_debug_lines.workspace = true
 bevy-parallax.workspace = true
-bevy_save.workspace = true
+# bevy_save.workspace = true

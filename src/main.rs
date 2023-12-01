@@ -12,11 +12,11 @@ use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Playe
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y, PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE, Z_INDEX_PENCIL_BOX};
-use bevy_save::{prelude::*, WorldSaveableExt};
+// use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
 use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit, process_text};
-use save_game::{GameState, load, reset_state};
-use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler, save_game_after_transition};
+use save_game::{GameState};
+use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler};
 use setup_sound_ui::{sound_ui, handle_sound_button_interactions};
 
 pub mod save_game;
@@ -49,7 +49,7 @@ fn main() {
         .add_plugins(FrameTimeDiagnosticsPlugin)
         .add_plugins(FramepacePlugin)
         .add_plugins(LdtkPlugin)
-        .add_plugins(SavePlugins)
+        // .add_plugins(SavePlugins)
         .add_plugins(CommonPlugin {})
         .add_plugins(CorePlugin {})
         .add_plugins(MovementPlugin {})
@@ -81,13 +81,12 @@ fn main() {
         .register_ldtk_entity::<PinBundle>("Pin")
         .register_ldtk_entity::<SharpenerBundle>("Sharpener")
         .register_ldtk_entity::<ExitBundle>("Exit")
-        .register_ldtk_entity::<TextBundle>("Text")
-        .register_saveable::<GameState>();
+        .register_ldtk_entity::<TextBundle>("Text");
 
 /*
     GLOBAL
 */
-    app.add_systems(Startup, (load, reset_state, background_music, setup_transition_ui, sound_ui).chain());
+    app.add_systems(Startup, (background_music, setup_transition_ui, sound_ui).chain());
     app.add_systems(Update, handle_sound_button_interactions);
 
 /*
@@ -116,7 +115,7 @@ fn main() {
         .add_systems(Update, process_sharpener.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_exit.run_if(in_state(AppState::InGame)))
         .add_systems(Update, switch_levels_transition_event_handler.run_if(in_state(AppState::InGame)))
-        .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
+        // .add_systems(Update, save_game_after_transition.run_if(in_state(AppState::InGame)))
         .add_systems(Update, consume_pin_ui_update_events.run_if(in_state(AppState::InGame)))
         .add_systems(Update, change_exit_sprite.run_if(in_state(AppState::InGame)))
         .add_systems(Update, open_exit.run_if(in_state(AppState::InGame)))

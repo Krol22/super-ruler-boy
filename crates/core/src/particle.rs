@@ -60,6 +60,10 @@ fn particle_update_sys (
         }
 
         let frame = particle.lifetime.percent() * particle.frames.len() as f32;
+        if frame.floor() as usize >= particle.frames.len() {
+            continue;
+        }
+
         texture_atlas_sprite.index = particle.frames[frame.floor() as usize];
     } 
 }

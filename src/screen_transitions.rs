@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::{prelude::{EventReader, Commands, Query, Entity, With, ResMut, Without, NextState, Res, AssetServer, NodeBundle, default, Color, BuildChildren, World, DespawnRecursiveExt}, ui::{Style, UiRect, Val, PositionType, FlexDirection, JustifyContent, BackgroundColor, ZIndex}};
 use bevy_ecs_ldtk::LevelSelection;
-use bevy_save::WorldSaveableExt;
+// use bevy_save::WorldSaveableExt;
 use bevy_tweening::{TweenCompleted, Tween, EaseFunction, lens::UiPositionLens, EaseMethod, Delay};
 use kt_common::components::{despawnable::Despawnable, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}};
 
@@ -151,7 +151,7 @@ pub fn save_game_after_transition (
             continue;
         }
 
-        let _ = world.save("gol");
+        // let _ = world.save("gol");
     }
 }
 

@@ -14,7 +14,7 @@ bevy.workspace = true
 bevy_rapier2d.workspace = true
 bevy-parallax.workspace = true
 bevy_framepace.workspace = true
-bevy_save.workspace = true
+# bevy_save.workspace = true
 bevy_tweening = { workspace = true, features = ["bevy_asset", "bevy_sprite", "bevy_ui", "bevy_text"] }
 bevy_ecs_ldtk = { workspace = true, features = ["atlas"] }
 
@@ -45,4 +45,4 @@ bevy_ecs_ldtk = "0.8.0"
 bevy_xpbd_2d = "0.2"
 bevy-parallax = "0.6.1"
 bevy_framepace = "0.13.4"
-bevy_save = "0.9.3"
+# bevy_save = "0.9.3"

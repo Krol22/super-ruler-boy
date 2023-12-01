@@ -8,13 +8,14 @@ use kt_core::particle::ParticleEmitter;
 
 pub fn apply_velocity_to_kinematic_controller(
     mut q_kinematic_controller: Query<(&mut KinematicCharacterController, &mut Velocity, &mut Acceleration, &GravityDir)>,
+    time: Res<Time>,
 ) {
     for (mut kcc, mut velocity, mut acceleration, gravity_dir) in q_kinematic_controller.iter_mut() {
         // Apply gravity
         if velocity.current.y < 0.0 {
-            velocity.current += Vec2::new(0.0, -15.0 * gravity_dir.dir * gravity_dir.slow_down);
+            velocity.current += Vec2::new(0.0, -12.0 * gravity_dir.dir * gravity_dir.slow_down);
         } else {
-            velocity.current += Vec2::new(0.0, -15.0 * gravity_dir.dir);
+            velocity.current += Vec2::new(0.0, -12.0 * gravity_dir.dir);
         }
 
         // Movement
@@ -27,8 +28,8 @@ pub fn apply_velocity_to_kinematic_controller(
         if kcc.translation.is_none() {
             kcc.translation = Some(
                 Vec2::new(
-                    velocity.current.x * (1.0 / 60.0),
-                    velocity.current.y * (1.0 / 60.0),
+                    velocity.current.x * time.delta_seconds(),
+                    velocity.current.y * time.delta_seconds(),
                 )
             );
         }
