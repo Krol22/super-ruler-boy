@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::{prelude::{EventReader, Commands, Query, Entity, With, ResMut, Without, NextState, Res, AssetServer, NodeBundle, default, Color, BuildChildren, World}, ui::{Style, UiRect, Val, PositionType, FlexDirection, JustifyContent, BackgroundColor, ZIndex}};
+use bevy::{prelude::{EventReader, Commands, Query, Entity, With, ResMut, Without, NextState, Res, AssetServer, NodeBundle, default, Color, BuildChildren, World, DespawnRecursiveExt}, ui::{Style, UiRect, Val, PositionType, FlexDirection, JustifyContent, BackgroundColor, ZIndex}};
 use bevy_ecs_ldtk::LevelSelection;
 use bevy_save::WorldSaveableExt;
 use bevy_tweening::{TweenCompleted, Tween, EaseFunction, lens::UiPositionLens, EaseMethod, Delay};
@@ -92,7 +92,7 @@ pub fn switch_levels_transition_event_handler (
         game_state.update_unlocked_levels();
 
         for despawnable_entity in q_despawnable.iter() {
-            commands.entity(despawnable_entity).despawn();
+            commands.entity(despawnable_entity).despawn_recursive();
         }
 
         let mut transition_left_column_animator = q_transition_left.single_mut();

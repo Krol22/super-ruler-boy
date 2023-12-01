@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Without, Entity, Camera, ImagePlugin, Color, in_state, OnEnter, States, Component, Resource, EventWriter}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::HashMap, time::{Time, Timer, TimerMode}, ecs::{schedule::ExecutorKind }, diagnostic::{FrameTimeDiagnosticsPlugin}, ui::{Style, Val, UiRect}, };
+use bevy::{prelude::{App, default, Commands, ResMut, Assets, Res, AssetServer, Vec2, SpatialBundle, Vec3, Transform, BuildChildren, Startup, Query, Children, With, Update, IntoSystemConfigs, KeyCode, Input, Rect, Without, Entity, Camera, ImagePlugin, Color, in_state, OnEnter, States, Component, Resource, EventWriter, AudioBundle, PlaybackSettings, AudioSink, AudioSinkPlayback, GlobalVolume}, DefaultPlugins, window::{WindowPlugin, Window, WindowResolution, PresentMode}, sprite::{TextureAtlas, SpriteSheetBundle, TextureAtlasSprite, SpriteBundle, Sprite}, utils::{HashMap}, time::{Time, Timer, TimerMode}, ecs::{schedule::ExecutorKind }, diagnostic::{FrameTimeDiagnosticsPlugin}, ui::{Style, Val, UiRect}, audio::{PlaybackMode, VolumeLevel}, };
 use bevy::prelude::PluginGroup;
 
 use bevy_ecs_ldtk::{LdtkPlugin, LdtkWorldBundle, LevelSelection, prelude::{LdtkIntCellAppExt, LdtkEntityAppExt}, LdtkSettings, LevelBackground, LayerMetadata};
@@ -8,21 +8,23 @@ use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
 use bevy_rapier2d::prelude::{RigidBody, Collider, KinematicCharacterController, QueryFilterFlags, RapierContext, QueryFilter};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformScaleLens, TransformPositionLens, SpriteColorLens, UiPositionLens}, RepeatCount};
 use in_game_ui::{setup_in_game_ui, consume_pin_ui_update_events};
-use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys, Exit}, interaction::Interaction}, events::{PinUiUpdated}};
+use kt_common::{CommonPlugin, components::{limb::{Limb, LimbType}, player::Player, jump::Jump, gravity::GravityDir, velocity::Velocity, acceleration::Acceleration, checkpoint::Checkpoint, ground_detector::GroundDetector, dust_particle_emitter::DustParticleEmitter, pin::{Pin, PinState}, ui::{TransitionColumnLeftUi, TransitionColumnRightUi}, ldtk::{WallBundle, SpikesBundle, SpawnPointBundle, CheckpointBundle, ElevatorBundle, PlatformBundle, PinBundle, SharpenerBundle, SpawnPoint, Level, Elevator, HitComponent, ExitBundle, RequiredKeys, Exit, TextBundle}, interaction::Interaction}, events::{PinUiUpdated}};
 use kt_core::{CorePlugin, animation::{Animation, Animator, animator_sys}, particle::ParticleEmitter};
 use kt_movement::MovementPlugin;
 use kt_util::constants::{WINDOW_TITLE, INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT, PLAYER_HIT_RESPAWN_TIME, PLAYER_CAMERA_MARGIN_X, ASPECT_RATIO_X, ASPECT_RATIO_Y, PLAYER_CAMERA_MARGIN_Y, PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE, Z_INDEX_PENCIL_BOX};
 use bevy_save::{prelude::*, WorldSaveableExt};
 use main_menu_ui::{setup_menu, handle_play_button_interactions, handle_level_button_interactions, handle_back_button_interactions};
-use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit};
+use process_ldtk_world::{process_spawn_point, process_elevator, process_platform, process_pin, process_sharpener, setup_walls, process_exit, process_text};
 use save_game::{GameState, load, reset_state};
 use screen_transitions::{complete_transition_event_handler, setup_transition_ui, switch_levels_transition_event_handler, save_game_after_transition};
+use setup_sound_ui::{sound_ui, handle_sound_button_interactions};
 
 pub mod save_game;
 pub mod main_menu_ui;
 pub mod screen_transitions;
 pub mod process_ldtk_world;
 pub mod in_game_ui;
+pub mod setup_sound_ui;
 
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum AppState {
@@ -79,12 +81,14 @@ fn main() {
         .register_ldtk_entity::<PinBundle>("Pin")
         .register_ldtk_entity::<SharpenerBundle>("Sharpener")
         .register_ldtk_entity::<ExitBundle>("Exit")
+        .register_ldtk_entity::<TextBundle>("Text")
         .register_saveable::<GameState>();
 
 /*
     GLOBAL
 */
-    app.add_systems(Startup, (load, reset_state).chain());
+    app.add_systems(Startup, (load, reset_state, background_music, setup_transition_ui, sound_ui).chain());
+    app.add_systems(Update, handle_sound_button_interactions);
 
 /*
    MENU STATE
@@ -103,9 +107,9 @@ fn main() {
         .add_systems(OnEnter(AppState::InGame), setup)
         .add_systems(OnEnter(AppState::InGame), spawn_player)
         .add_systems(OnEnter(AppState::InGame), setup_in_game_ui)
-        .add_systems(Startup, setup_transition_ui)
         .add_systems(Update, setup_walls.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_spawn_point.run_if(in_state(AppState::InGame)))
+        .add_systems(Update, process_text.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_elevator.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_platform.run_if(in_state(AppState::InGame)))
         .add_systems(Update, process_pin.run_if(in_state(AppState::InGame)))
@@ -142,6 +146,20 @@ fn main() {
     .run_if(in_state(AppState::InGame)));
     
     app.run();
+}
+
+fn background_music (
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    commands.spawn(AudioBundle {
+        source: asset_server.load("audio/music_2.ogg"),
+        settings: PlaybackSettings {
+            volume: bevy::audio::Volume::Relative(VolumeLevel::new(0.1)),
+            mode: PlaybackMode::Loop,
+            ..default()
+        },
+    });
 }
 
 fn restart_player_pos(
@@ -208,6 +226,8 @@ fn handle_pin(
         &mut bevy_tweening::Animator<Transform>,
         &mut bevy_tweening::Animator<Sprite>,
     )>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
 ) {
     for (mut pin, transform, mut transform_animator, mut sprite_animator) in q_pin.iter_mut() {
         // dbg!(&pin);
@@ -235,6 +255,15 @@ fn handle_pin(
             sprite_animator.set_tweenable(opacity);
 
             pin.picked = true;
+
+            commands.spawn(AudioBundle {
+                source: asset_server.load("audio/SFX_powerUp10.ogg"),
+                settings: PlaybackSettings {
+                    volume: bevy::audio::Volume::Relative(VolumeLevel::new(0.2)),
+                    mode: PlaybackMode::Remove,
+                    ..default()
+                },
+            });
         }
     }
 }
@@ -506,8 +535,6 @@ fn restart_pin(
             animator_transform.set_tweenable(tween);
             animator_sprite.set_tweenable(opacity_tween);
             pin.state.update_value(PinState::Idle);
-
-            dbg!("restart");
         }
     }
 }
@@ -654,6 +681,8 @@ fn handle_player_hurt_collision(
     q_hit: Query<&HitComponent>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
 ) {
     for (transform, mut velocity, mut player) in q_player.iter_mut() {
         player.hit_timer.tick(time.delta());
@@ -689,6 +718,15 @@ fn handle_player_hurt_collision(
             if hit_component.is_ok() {
                 player.respawn_timer = Timer::from_seconds(PLAYER_HIT_RESPAWN_TIME, TimerMode::Once);
                 player.is_respawning = true;
+
+                commands.spawn(AudioBundle {
+                    source: asset_server.load("audio/SFX_fall2.ogg"),
+                    settings: PlaybackSettings {
+                        volume: bevy::audio::Volume::Relative(VolumeLevel::new(0.2)),
+                        mode: PlaybackMode::Remove,
+                        ..default()
+                    },
+                });
 
                 for mut sprite in q_limbs.iter_mut() {
                     sprite.color = Color::Rgba{ red: 1.0, green: 1.0, blue: 1.0, alpha: 0.0 };

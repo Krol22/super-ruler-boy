@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren, Image, ResMut, EventWriter, Assets}, sprite::{SpriteBundle, Sprite, TextureAtlas, TextureAtlasSprite, SpriteSheetBundle}, render::render_resource::Texture, time::{Timer, TimerMode}};
+use bevy::{prelude::{Query, Transform, Entity, Commands, Res, AssetServer, Added, Vec3, SpatialBundle, With, Without, Color, default, Vec2, BuildChildren, Image, ResMut, EventWriter, Assets, DespawnRecursiveExt}, sprite::{SpriteBundle, Sprite, TextureAtlas, TextureAtlasSprite, SpriteSheetBundle}, render::render_resource::Texture, time::{Timer, TimerMode}};
 use bevy_rapier2d::prelude::{Collider, RigidBody, Sensor, GravityScale};
 use bevy_tweening::{Tween, EaseFunction, lens::{TransformPositionLens, SpriteColorLens}, RepeatCount};
-use kt_common::{components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys, Exit, HitComponent}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction}, events::PinUiUpdated};
+use kt_common::{components::{platform::Platform, despawnable::Despawnable, ldtk::{ElevatorInstance, SpawnPoint, WallDefinition, PointTo, Elevator, Level, PlatformInstance, SharpenerInstance, PinInstance, ExitBundle, ExitInstance, RequiredKeys, Exit, HitComponent, TextInstance, Value}, player::Player, pin::Pin, sharpener::Sharpener, interaction::Interaction}, events::PinUiUpdated};
 use kt_util::constants::{Z_INDEX_PENCIL_BOX, PLAYER_HIT_RESPAWN_TIME};
 
 use crate::save_game::GameState;
@@ -21,6 +21,38 @@ pub struct Rectangle {
     pub height: usize,
 }
 
+pub fn process_text(
+    q_entity: Query<(&Transform, Entity, &Value), Added<TextInstance>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let paths = vec![
+        "sprites/l-r-to-move.png",
+        "sprites/space-to-jump.png",
+        "sprites/x-to-scale.png",
+        "sprites/space-to-let-go.png",
+    ];
+
+    for (transform, entity, value) in q_entity.iter() {
+        commands.entity(entity).despawn_recursive();
+
+        let texture_handle = asset_server.load(paths[value.0 as usize]);
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_xyz(
+                    transform.translation.x,
+                    transform.translation.y,
+                    -1.0,
+                ).with_scale(Vec3::new(0.10, 0.10, 1.0)),
+                texture: texture_handle.clone(),
+                ..default()
+            },
+            Despawnable {},
+        ));
+
+    }
+}
+
 pub fn process_platform(
     q_entity: Query<(&Transform, Entity), Added<PlatformInstance>>,
     mut commands: Commands,
@@ -31,7 +63,7 @@ pub fn process_platform(
     for (transform, entity) in q_entity.iter() {
         commands
             .entity(entity)
-            .despawn();
+            .despawn_recursive();
 
         let tween = Tween::new(
             EaseFunction::BounceOut,
@@ -72,7 +104,6 @@ pub fn process_platform(
         ).id();
 
         commands.entity(platform).add_child(platform_texture);
-
     }
 }
 
@@ -86,7 +117,7 @@ pub fn process_elevator(
     for (transform, level, entity) in q_entity.iter() {
         commands
             .entity(entity)
-            .despawn();
+            .despawn_recursive();
 
         commands.spawn((
             SpriteBundle {
@@ -121,7 +152,7 @@ pub fn process_sharpener(
     for (transform, point_to, entity) in q_entity.iter() {
         commands
             .entity(entity)
-            .despawn();
+            .despawn_recursive();
         
         let tween = Tween::new(
             EaseFunction::SineInOut,
@@ -166,7 +197,7 @@ pub fn process_pin(
     for (transform, entity) in q_entity.iter() {
         commands
             .entity(entity)
-            .despawn();
+            .despawn_recursive();
 
         let tween = Tween::new(
             EaseFunction::SineInOut,
@@ -268,7 +299,7 @@ pub fn process_exit (
     for (transform, required_keys, entity) in q_entity.iter() {
         commands
             .entity(entity)
-            .despawn();
+            .despawn_recursive();
 
         commands.spawn((
             SpriteSheetBundle {

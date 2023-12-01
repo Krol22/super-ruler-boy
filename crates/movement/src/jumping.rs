@@ -1,4 +1,4 @@
-use bevy::{prelude::{Query, Res, Input, KeyCode, Transform, Vec2, default, With}, time::{Time, Timer}};
+use bevy::{prelude::{Query, Res, Input, KeyCode, Transform, Vec2, default, With, AudioBundle, PlaybackSettings, Commands, AssetServer}, time::{Time, Timer}, audio::{PlaybackMode, VolumeLevel}};
 use bevy_rapier2d::prelude::{KinematicCharacterControllerOutput, RapierContext, Collider, QueryFilter, QueryFilterFlags, KinematicCharacterController};
 use kt_common::components::{velocity::Velocity, jump::Jump, player::Player};
 use kt_util::constants::{PLAYER_JUMP_SPEED, JUMP_HOLD_FORCE, JUMP_HOLD_TIMER};
@@ -7,6 +7,9 @@ pub fn jumping_controls (
     mut q_player: Query<(&mut Velocity, &mut Jump, &Player)>,
     keyboard_input: Res<Input<KeyCode>>,
     time: Res<Time>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+
 ) {
     for (mut velocity, mut jump, player) in q_player.iter_mut() {
         if keyboard_input.pressed(KeyCode::Space) && jump.is_jumping && !jump.jump_timer.finished() {
@@ -22,6 +25,15 @@ pub fn jumping_controls (
             if player.is_respawning {
                 continue;
             }
+
+            commands.spawn(AudioBundle {
+                source: asset_server.load("audio/SFX_Jump_11.ogg"),
+                settings: PlaybackSettings {
+                    volume: bevy::audio::Volume::Relative(VolumeLevel::new(0.2)),
+                    mode: PlaybackMode::Remove,
+                    ..default()
+                },
+            });
 
             velocity.current.y = PLAYER_JUMP_SPEED;
             jump.is_jumping = true;

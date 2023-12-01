@@ -18,6 +18,12 @@ pub struct MainMenuUi {}
 pub struct MainColumnUi {}
 
 #[derive(Clone, Component, Debug, Default)]
+pub struct SoundUi {}
+
+#[derive(Clone, Component, Debug, Default)]
+pub struct MuteButtonUi {}
+
+#[derive(Clone, Component, Debug, Default)]
 pub struct LevelSelectColumnUi {}
 
 #[derive(Clone, Component, Debug, Default)]

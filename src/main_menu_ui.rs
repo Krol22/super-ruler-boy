@@ -203,7 +203,7 @@ pub fn handle_level_button_interactions(
     for (interaction, level_select_button) in &mut q_interaction {
         if let bevy::ui::Interaction::Pressed = *interaction {
             commands.spawn(AudioBundle {
-                source: asset_server.load("audio/btn_click.ogg"),
+                source: asset_server.load("audio/SFX_powerUp10.ogg"),
                 settings: PlaybackSettings {
                     mode: PlaybackMode::Remove,
                     ..default()

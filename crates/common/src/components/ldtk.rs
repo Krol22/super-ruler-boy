@@ -49,6 +49,13 @@ pub struct ExitBundle {
     pub required_keys: RequiredKeys,
 }
 
+#[derive(Default, Bundle, LdtkEntity)]
+pub struct TextBundle {
+    pub text_instance: TextInstance,
+    #[with(Value::from_field)]
+    pub value: Value,
+}
+
 #[derive(Default, Component, Clone, Debug)]
 pub struct ExitInstance {}
 
@@ -113,7 +120,6 @@ pub struct PointTo {
     pub y: i32,
 }
 
-
 impl PointTo {
     pub fn from_field(entity_instance: &EntityInstance) -> PointTo {
         let point_field = *entity_instance
@@ -126,6 +132,20 @@ impl PointTo {
         }
     }
 }
+
+#[derive(Clone, Component, Debug, Default, Reflect, PartialEq, PartialOrd)]
+pub struct Value(pub i32);
+
+impl Value {
+    pub fn from_field(entity_instance: &EntityInstance) -> Value {
+        Value(*entity_instance
+            .get_int_field("value")
+            .expect("expected entity to have non-nullable level string field"))
+    }
+}
+
+#[derive(Clone, Component, Default, Debug)]
+pub struct TextInstance {}
 
 #[derive(Clone, Component, Default, Debug)]
 pub struct ElevatorInstance {}
